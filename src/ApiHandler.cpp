@@ -7,9 +7,9 @@
 
 // --- Configurações da API ---
 // COLOQUE AQUI A SUA URL ATUAL DO NGROK!
-const char* baseUrl = "https://18e48d0c72fa.ngrok-free.app";
+const char* baseUrl = "http://arduino.ghzds.com.br";
 
-const unsigned long POLLING_INTERVAL = 5000; // 5 segundos
+const unsigned long POLLING_INTERVAL = 1000; // 1 segundos
 unsigned long ultimaVerificacao = 0;
 
 void processarRespostaApi(String payload) {

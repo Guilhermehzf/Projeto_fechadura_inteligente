@@ -56,6 +56,6 @@ func main() {
 	http.HandleFunc("/status", statusHandler)
 	http.HandleFunc("/toggle", toggleHandler)
 
-	log.Println("API rodando em http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+	log.Println("API rodando em http://localhost:8088")
+	http.ListenAndServe(":8088", nil)
 }

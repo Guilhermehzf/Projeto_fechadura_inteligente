@@ -5,27 +5,10 @@
   "parts": [
     { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 38.4, "left": 168.04, "attrs": {} },
     { "type": "wokwi-membrane-keypad", "id": "keypad1", "top": -213.2, "left": 284, "attrs": {} },
-    {
-      "type": "wokwi-lcd1602",
-      "id": "lcd1",
-      "top": -108.8,
-      "left": -32.8,
-      "attrs": { "pins": "i2c" }
-    },
-    {
-      "type": "wokwi-led",
-      "id": "led1",
-      "top": 73.2,
-      "left": -82.6,
-      "attrs": { "color": "limegreen" }
-    },
-    {
-      "type": "wokwi-led",
-      "id": "led2",
-      "top": 25.2,
-      "left": -111.4,
-      "attrs": { "color": "red" }
-    }
+    { "type": "wokwi-lcd1602", "id": "lcd1", "top": -108.8, "left": -32.8, "attrs": { "pins": "i2c" } },
+    { "type": "wokwi-led", "id": "led1", "top": 73.2, "left": -82.6, "attrs": { "color": "limegreen" } },
+    { "type": "wokwi-led", "id": "led2", "top": 25.2, "left": -111.4, "attrs": { "color": "red" } },
+    { "type": "wokwi-wifi-module", "id": "wifi", "top": -45.5, "left": -188, "attrs": {} }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -45,7 +28,10 @@
     [ "led1:C", "esp:GND.1", "black", [ "v0" ] ],
     [ "led2:C", "esp:GND.1", "black", [ "v0" ] ],
     [ "led2:A", "esp:27", "red", [ "v0" ] ],
-    [ "led1:A", "esp:25", "green", [ "v0" ] ]
+    [ "led1:A", "esp:25", "green", [ "v0" ] ],
+    [ "wifi:VCC", "esp:5V", "red", [ "v0" ] ],
+    [ "wifi:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "wifi:EN", "esp:EN", "blue", [ "v0" ] ]
   ],
   "dependencies": {}
 }
