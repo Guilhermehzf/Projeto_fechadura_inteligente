@@ -111,7 +111,7 @@ func main() {
 	log.Println("Aguardando estado inicial do broker...")
 	select {
 	case <-initialMessageReceived:
-		log.Println("Estado inicial recebido e sincronizado com sucesso!")
+		log.Println("Estado inicial recebido e sincronizado com sucesso!!")
 	case <-time.After(5 * time.Second):
 		log.Println("Timeout: Nenhuma mensagem de estado retida encontrada. Definindo estado padrão como 'fechada'.")
 		stateMutex.Lock()
