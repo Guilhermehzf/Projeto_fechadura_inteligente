@@ -12,7 +12,7 @@
 const char* MQTT_BROKER = "0dfb02c89e7f487f9a2f8e5e29729297.s1.eu.hivemq.cloud";
 const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "esp32-device";
-const char* MQTT_PASS = "Gatitcha1!";
+const char* MQTT_PASS = "esp32-Password!";
 
 // --- TÓPICOS ---
 const char* MQTT_TOPIC_COMMANDS = "fechadura/comandos";
