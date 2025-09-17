@@ -4,7 +4,6 @@
 
 #include <Arduino.h>
 
-// Declara a variável como "extern" para dizer a outros arquivos que ela existe
 extern bool trancaAberta;
 
 #endif

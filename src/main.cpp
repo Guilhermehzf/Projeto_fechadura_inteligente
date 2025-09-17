@@ -4,19 +4,17 @@
 #include "KeypadHandler.h"
 #include "EEPROMHandler.h"
 #include "WiFiConfig.h"
-#include "ApiHandler.h"
+#include "MqttHandler.h"
 
-// A definição da variável continua aqui
-bool trancaAberta = true; 
-
-// Demais variáveis globais...
+// --- Variáveis Globais ---
 String senhaAtual;
 const String senhaMestra = "0000";
 String bufferNormal = "";
 String bufferProgramacao = "";
 bool modoProgramacao = false;
+bool trancaAberta = true; 
 
-// Protótipos
+// --- Protótipos ---
 void tratarModoProgramacao(char tecla);
 void tratarModoNormal(char tecla);
 
@@ -25,7 +23,8 @@ void setup() {
     setupLeds();
     setupLcd();
     setupEeprom();
-    setupWiFi();
+    setup_wifi();
+    setup_mqtt();
     senhaAtual = lerSenhaDaEeprom();
     atualizarLeds(trancaAberta);
     exibirMensagemInicial();
@@ -33,8 +32,7 @@ void setup() {
 
 void loop() {
     verificarTimeoutMensagem();
-    api_loop(); // Chama a função de polling
-
+    mqtt_loop();
     char tecla = lerTecla();
     if (tecla) {
         if (modoProgramacao) {
@@ -45,7 +43,9 @@ void loop() {
     }
 }
 
+// === FUNÇÃO CORRIGIDA ===
 void tratarModoNormal(char tecla) {
+    // A LINHA QUE FALTAVA FOI ADICIONADA AQUI
     bufferNormal += tecla;
 
     if (bufferNormal.endsWith(senhaMestra)) {
@@ -57,8 +57,19 @@ void tratarModoNormal(char tecla) {
 
     if (bufferNormal.endsWith(senhaAtual)) {
         bufferNormal = "";
-        // EM VEZ DE MUDAR O ESTADO LOCALMENTE, PEDIMOS PARA A API MUDAR
-        api_toggle_state();
+        
+        // 1. AÇÃO IMEDIATA: Mude o estado e o hardware localmente
+        Serial.println("Senha correta! Trocando estado localmente...");
+        trancaAberta = !trancaAberta; 
+        atualizarLeds(trancaAberta);
+        if (trancaAberta) {
+            exibirAcessoLiberado();
+        } else {
+            exibirTrancado();
+        }
+
+        // 2. NOTIFICAÇÃO: Avise a nuvem sobre o novo estado
+        publish_current_state();
     }
 }
 

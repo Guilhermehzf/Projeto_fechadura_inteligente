@@ -1,45 +1,35 @@
 #include "WiFiConfig.h"
 #include <WiFi.h>
 
-// DESCOMENTE A LINHA ABAIXO QUANDO ESTIVER RODANDO NO SIMULADOR WOKWI
+// DESCOMENTE A LINHA ABAIXO PARA RODAR NO SIMULADOR WOKWI
 #define WOKWI_SIMULATION
 
-#ifndef WOKWI_SIMULATION
-  // Este código só será compilado para o hardware real
-  #include <WiFiManager.h>
+#ifdef WOKWI_SIMULATION
+  // --- CONFIGURAÇÃO PARA O SIMULADOR WOKWI ---
+  const char* ssid = "Wokwi-GUEST";
+  const char* password = "";
+#else
+  // --- CONFIGURAÇÃO PARA SUA PLACA REAL ---
+  // --- COLOQUE AS CREDENCIAIS DA SUA REDE WI-FI AQUI ---
+  const char* ssid = "NOME_DA_SUA_REDE_WIFI";
+  const char* password = "SENHA_DA_SUA_REDE_WIFI";
 #endif
 
-void setupWiFi() {
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Conectando-se a ");
+  Serial.println(ssid);
 
-  #ifdef WOKWI_SIMULATION
-    // --- CÓDIGO PARA O SIMULADOR WOKWI ---
-    Serial.println("Modo de simulação Wokwi: Conectando à rede virtual...");
-    WiFi.begin("Wokwi-GUEST", "", 6); // O 6 é o canal, pode ser necessário
+  WiFi.begin(ssid, password);
 
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-    }
-    Serial.println("");
-    Serial.println("Conectado à rede Wokwi com sucesso!");
-    Serial.print("Endereço IP: ");
-    Serial.println(WiFi.localIP());
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
 
-  #else
-    // --- CÓDIGO PARA O HARDWARE REAL (com WiFiManager) ---
-    WiFiManager wm;
-    wm.setConfigPortalTimeout(180);
-
-    if (!wm.autoConnect("Fechadura-Config", "senha1234")) {
-      Serial.println("Falha ao conectar e o tempo limite expirou. Reiniciando...");
-      delay(3000);
-      ESP.restart();
-    }
-    
-    Serial.println("");
-    Serial.println("Conectado à rede Wi-Fi com sucesso!");
-    Serial.print("Endereço IP: ");
-    Serial.println(WiFi.localIP());
-
-  #endif
+  Serial.println("");
+  Serial.println("WiFi conectado!");
+  Serial.print("Endereço IP: ");
+  Serial.println(WiFi.localIP());
 }
