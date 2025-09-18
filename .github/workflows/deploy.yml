@@ -37,10 +37,12 @@ jobs:
           TARGET_PATH: ${{ secrets.SERVER_APP_PATH }}
           SUDO_PASS: ${{ secrets.SERVER_PASSWORD }}
         run: |
-          sshpass -p '${{ secrets.SERVER_PASSWORD }}' ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+          # A flag '-t' foi adicionada para resolver o problema do sudo
+          sshpass -p '${{ secrets.SERVER_PASSWORD }}' ssh -t -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             set -e
             
             echo "Parando o serviço antigo da API..."
+            # Mantido o nome do serviço como 'api.service'
             echo $SUDO_PASS | sudo -S systemctl stop api.service
             
             echo "Movendo o novo executável para o destino final: $TARGET_PATH"
@@ -48,8 +50,10 @@ jobs:
             echo $SUDO_PASS | sudo -S chmod +x "$TARGET_PATH"
 
             echo "Iniciando o novo serviço da API..."
+            # Mantido o nome do serviço como 'api.service'
             echo $SUDO_PASS | sudo -S systemctl start api.service
 
             echo "Deploy concluído! Verificando o status..."
+            # Mantido o nome do serviço como 'api.service'
             echo $SUDO_PASS | sudo -S systemctl status api.service
           EOF
