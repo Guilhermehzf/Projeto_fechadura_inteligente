@@ -1,37 +1,47 @@
-name: Apenas Enviar a API para o Servidor
+name: Enviar API para o Servidor
 
 on:
   push:
     branches:
-      - US-MQTT # ou a branch que você usa
+      - US-MQTT
     paths:
-      - 'api/**'
+      - "api/**"
 
 jobs:
-  upload:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Passos para compilar o código (continuam iguais)
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-      - name: Check out code
+      - name: Checkout
         uses: actions/checkout@v4
-      - name: Build Go binary
-        run: |
-          cd api
-          # Esta linha cria o arquivo executável chamado 'minha-api'
-          GOOS=linux GOARCH=amd64 go build -o minha-api
 
-      # Passo para instalar a ferramenta de senha
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      # --- PASSO DE CÓPIA CORRIGIDO ---
-      - name: Copy binary to server directory
+      - name: Instalar rsync e sshpass
         run: |
-          # Este comando agora copia o arquivo 'minha-api' PARA DENTRO da pasta
-          # que você definiu no secret SERVER_APP_PATH.
-          sshpass -p '${{ secrets.SERVER_PASSWORD }}' scp -o StrictHostKeyChecking=no ./api/minha-api ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.SERVER_APP_PATH }}/
+          sudo apt-get update
+          sudo apt-get install -y rsync sshpass
+
+      # Copia o CONTEÚDO de ./api para SERVER_APP_PATH (note as barras finais)
+      - name: Sincronizar pasta api para o servidor
+        env:
+          SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }} # opcional; crie o secret, senão usa 22
+        run: |
+          PORT="${SSH_PORT:-22}"
+          sshpass -p "$SSH_PASSWORD" rsync -az --delete \
+            -e "ssh -o StrictHostKeyChecking=no -p $PORT" \
+            ./api/ "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
+
+      - name: Verificar no servidor (opcional)
+        if: always()
+        env:
+          SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
+          SSH_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          PORT="${SSH_PORT:-22}"
+          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "ls -la '$REMOTE_PATH' | head -n 50"
