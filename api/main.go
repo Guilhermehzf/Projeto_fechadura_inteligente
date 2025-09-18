@@ -122,7 +122,7 @@ func main() {
 	// Inicia o servidor HTTP
 	http.HandleFunc("/status", statusHandler)
 	http.HandleFunc("/toggle", toggleHandler)
-	addr := "0.0.0.0:8088"
+	addr := "0.0.0.0:8089"
 	log.Printf("API HTTP rodando e escutando em http://%s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Erro ao iniciar o servidor HTTP: %s\n", err)
