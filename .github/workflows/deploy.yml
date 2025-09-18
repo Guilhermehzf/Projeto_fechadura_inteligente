@@ -1,4 +1,4 @@
-name: Enviar API para o Servidor (preservar .env)
+name: Enviar API para o Servidor (preservar .env e bin)
 
 on:
   push:
@@ -25,8 +25,8 @@ jobs:
         run: |
           echo "PORT=${{ secrets.SERVER_PORT || 22 }}" >> $GITHUB_OUTPUT
 
-      # 1) Garante que a pasta existe e faz backup do .env se existir
-      - name: Preparar destino e backup de .env
+      # garante pasta e faz backup de .env e bin/app se existirem
+      - name: Preparar destino e backups (.env e bin/app)
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -35,25 +35,33 @@ jobs:
         run: |
           PORT="${{ steps.vars.outputs.PORT }}"
           sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
-            mkdir -p '$REMOTE_PATH' &&
+            set -e
+            mkdir -p '$REMOTE_PATH'
+            # backup .env
             if [ -f '$REMOTE_PATH/.env' ]; then
               cp -f '$REMOTE_PATH/.env' '$REMOTE_PATH/.env.bak'
             fi
+            # backup bin/app (se existir)
+            if [ -f '$REMOTE_PATH/bin/app' ]; then
+              mkdir -p '$REMOTE_PATH/bin'
+              cp -f '$REMOTE_PATH/bin/app' '$REMOTE_PATH/bin/app.bak'
+            fi
           "
 
-      # 2) Lista de exclusões que NÃO devem ser tocadas no servidor
+      # exclusões que não devem ser tocadas no servidor
       - name: Criar arquivo de exclusões
         run: |
           cat > rsync-excludes.txt <<'EOF'
           .env
           .env.*
-          # adicione outros arquivos/pastas do servidor que não estão no repo
+          bin/
           uploads/
           storage/
+          # adicione outros caminhos que só existam no servidor
           EOF
 
-      # 3) Sincroniza SOMENTE o conteúdo de ./api, preservando os excluídos no servidor
-      - name: Sincronizar pasta api para o servidor (preserva .env)
+      # sincroniza o CONTEÚDO de ./api preservando .env e bin/
+      - name: Sincronizar pasta api para o servidor (preserva .env e bin)
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -76,6 +84,8 @@ jobs:
         run: |
           PORT="${{ steps.vars.outputs.PORT }}"
           sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
+            echo 'Conteúdo do destino:'
             ls -la '$REMOTE_PATH' | head -n 50
             [ -f '$REMOTE_PATH/.env' ] && echo '.env preservado' || echo 'ATENÇÃO: .env ausente'
+            [ -d '$REMOTE_PATH/bin' ] && ls -la '$REMOTE_PATH/bin' || true
           "
