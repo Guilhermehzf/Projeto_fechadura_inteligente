@@ -3,7 +3,7 @@ name: Deploy Go API to Server with Password
 on:
   push:
     branches:
-      - US-MQTT
+      - US-MQTT # ou a branch que você usa, ex: US-MQTT
     paths:
       - 'api/**'
 
@@ -12,43 +12,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Passos de setup, build, install e scp continuam iguais
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+
       - name: Check out code
         uses: actions/checkout@v4
+
       - name: Build Go binary
         run: |
           cd api
+          # Esta é a linha que CRIA o arquivo 'minha-api'
           GOOS=linux GOARCH=amd64 go build -o minha-api
+
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
+
       - name: Copy binary to server via SCP
         run: |
+          # Este comando ENVIA o 'minha-api' para o servidor com um nome temporário
           sshpass -p '${{ secrets.SERVER_PASSWORD }}' scp -o StrictHostKeyChecking=no ./api/minha-api ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/minha-api-nova
 
-      # --- PASSO SSH SIMPLIFICADO ---
-      - name: SSH into server and restart service
-        env:
-          TARGET_PATH: ${{ secrets.SERVER_APP_PATH }}
+      - name: Execute deploy script on server
         run: |
-          # Não precisamos mais da flag '-t' nem de passar a senha para o sudo
+          # Este comando diz ao servidor para rodar o script assistente
           sshpass -p '${{ secrets.SERVER_PASSWORD }}' ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            set -e
-            
-            echo "Parando o serviço antigo da API..."
-            # Agora os comandos sudo rodam diretamente, sem 'echo'
-            sudo systemctl stop api.service
-            
-            echo "Movendo o novo executável para o destino final: $TARGET_PATH"
-            sudo mv ~/minha-api-nova "$TARGET_PATH"
-            sudo chmod +x "$TARGET_PATH"
-
-            echo "Iniciando o novo serviço da API..."
-            sudo systemctl start api.service
-
-            echo "Deploy concluído! Verificando o status..."
-            sudo systemctl status api.service
+            sudo /home/${{ secrets.SERVER_USER }}/deploy-api.sh
           EOF
