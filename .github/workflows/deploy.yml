@@ -3,7 +3,7 @@ name: Apenas Enviar a API para o Servidor
 on:
   push:
     branches:
-      - main # ou a branch que você usa
+      - US-MQTT # ou a branch que você usa
     paths:
       - 'api/**'
 
