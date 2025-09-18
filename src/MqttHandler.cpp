@@ -7,12 +7,13 @@
 #include "LedControl.h"   
 #include "LCDInterface.h"
 #include <ArduinoJson.h>
+#include "secrets.h"
 
 // --- SUAS CREDENCIAIS DO HIVEMQ ---
-const char* MQTT_BROKER = "0dfb02c89e7f487f9a2f8e5e29729297.s1.eu.hivemq.cloud";
-const int   MQTT_PORT = 8883;
-const char* MQTT_USER = "esp32-device";
-const char* MQTT_PASS = "esp32-Password!";
+const char* MQTT_BROKER = SECRET_MQTT_BROKER;
+const int   MQTT_PORT = SECRET_MQTT_PORT;
+const char* MQTT_USER = SECRET_MQTT_USER;
+const char* MQTT_PASS = SECRET_MQTT_PASS;
 
 // --- TÓPICOS ---
 const char* MQTT_TOPIC_COMMANDS = "fechadura/comandos";

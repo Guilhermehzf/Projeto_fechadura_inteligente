@@ -1,5 +1,6 @@
 #include "WiFiConfig.h"
 #include <WiFi.h>
+#include "secrets.h"
 
 // DESCOMENTE A LINHA ABAIXO PARA RODAR NO SIMULADOR WOKWI
 #define WOKWI_SIMULATION
@@ -11,8 +12,8 @@
 #else
   // --- CONFIGURAÇÃO PARA SUA PLACA REAL ---
   // --- COLOQUE AS CREDENCIAIS DA SUA REDE WI-FI AQUI ---
-  const char* ssid = "NOME_DA_SUA_REDE_WIFI";
-  const char* password = "SENHA_DA_SUA_REDE_WIFI";
+  const char* ssid = SECRET_WIFI_SSID;
+  const char* password = SECRET_WIFI_PASS;
 #endif
 
 void setup_wifi() {

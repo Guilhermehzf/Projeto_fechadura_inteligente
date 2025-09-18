@@ -3,7 +3,7 @@ name: Deploy Go API to Server with Password
 on:
   push:
     branches:
-      - US-MQTT
+      - main
     paths:
       - 'api/**'
 
@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Passos 1, 2 e 3 (Setup Go, Checkout, Build) continuam iguais
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -26,35 +25,31 @@ jobs:
           cd api
           GOOS=linux GOARCH=amd64 go build -o minha-api
 
-      # Passo 4 (Install sshpass) continua igual
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      # Passo 5 (Copy binary) continua igual, copiando para um local temporário
       - name: Copy binary to server via SCP
         run: |
           sshpass -p '${{ secrets.SERVER_PASSWORD }}' scp -o StrictHostKeyChecking=no ./api/minha-api ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/minha-api-nova
 
-      # Passo 6 (SSH e Reiniciar) AGORA USA O NOVO SECRET
       - name: SSH into server and restart service
         env:
-          # Passa o secret para o ambiente do script
           TARGET_PATH: ${{ secrets.SERVER_APP_PATH }}
+          SUDO_PASS: ${{ secrets.SERVER_PASSWORD }}
         run: |
           sshpass -p '${{ secrets.SERVER_PASSWORD }}' ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            set -e # Para o script se qualquer comando falhar
+            set -e
             
             echo "Parando o serviço antigo da API..."
-            sudo systemctl stop minha-api.service
+            echo $SUDO_PASS | sudo -S systemctl stop api.service
             
             echo "Movendo o novo executável para o destino final: $TARGET_PATH"
-            # Usa a variável de ambiente $TARGET_PATH que definimos acima
-            sudo mv ~/minha-api-nova "$TARGET_PATH"
-            sudo chmod +x "$TARGET_PATH"
+            echo $SUDO_PASS | sudo -S mv ~/minha-api-nova "$TARGET_PATH"
+            echo $SUDO_PASS | sudo -S chmod +x "$TARGET_PATH"
 
             echo "Iniciando o novo serviço da API..."
-            sudo systemctl start minha-api.service
+            echo $SUDO_PASS | sudo -S systemctl start api.service
 
             echo "Deploy concluído! Verificando o status..."
-            sudo systemctl status minha-api.service
+            echo $SUDO_PASS | sudo -S systemctl status api.service
           EOF
