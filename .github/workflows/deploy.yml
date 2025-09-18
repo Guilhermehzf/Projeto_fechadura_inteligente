@@ -1,42 +1,37 @@
-name: Deploy Go API to Server with Password
+name: Apenas Enviar a API para o Servidor
 
 on:
   push:
     branches:
-      - US-MQTT # ou a branch que você usa, ex: US-MQTT
+      - main # ou a branch que você usa
     paths:
       - 'api/**'
 
 jobs:
-  deploy:
+  upload:
     runs-on: ubuntu-latest
 
     steps:
+      # Passos para compilar o código (continuam iguais)
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Build Go binary
         run: |
           cd api
-          # Esta é a linha que CRIA o arquivo 'minha-api'
+          # Esta linha cria o arquivo executável chamado 'minha-api'
           GOOS=linux GOARCH=amd64 go build -o minha-api
 
+      # Passo para instalar a ferramenta de senha
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      - name: Copy binary to server via SCP
+      # --- PASSO DE CÓPIA CORRIGIDO ---
+      - name: Copy binary to server directory
         run: |
-          # Este comando ENVIA o 'minha-api' para o servidor com um nome temporário
-          sshpass -p '${{ secrets.SERVER_PASSWORD }}' scp -o StrictHostKeyChecking=no ./api/minha-api ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/minha-api-nova
-
-      - name: Execute deploy script on server
-        run: |
-          # Este comando diz ao servidor para rodar o script assistente
-          sshpass -p '${{ secrets.SERVER_PASSWORD }}' ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            sudo /home/${{ secrets.SERVER_USER }}/deploy-api.sh
-          EOF
+          # Este comando agora copia o arquivo 'minha-api' PARA DENTRO da pasta
+          # que você definiu no secret SERVER_APP_PATH.
+          sshpass -p '${{ secrets.SERVER_PASSWORD }}' scp -o StrictHostKeyChecking=no ./api/minha-api ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.SERVER_APP_PATH }}/
