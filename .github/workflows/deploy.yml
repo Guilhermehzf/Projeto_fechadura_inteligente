@@ -1,4 +1,4 @@
-name: Enviar API para o Servidor (preservar .env e bin)
+name: Enviar API para o Servidor (preservar .env/bin e reiniciar)
 
 on:
   push:
@@ -25,7 +25,6 @@ jobs:
         run: |
           echo "PORT=${{ secrets.SERVER_PORT || 22 }}" >> $GITHUB_OUTPUT
 
-      # garante pasta e faz backup de .env e bin/app se existirem
       - name: Preparar destino e backups (.env e bin/app)
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
@@ -37,18 +36,10 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
             set -e
             mkdir -p '$REMOTE_PATH'
-            # backup .env
-            if [ -f '$REMOTE_PATH/.env' ]; then
-              cp -f '$REMOTE_PATH/.env' '$REMOTE_PATH/.env.bak'
-            fi
-            # backup bin/app (se existir)
-            if [ -f '$REMOTE_PATH/bin/app' ]; then
-              mkdir -p '$REMOTE_PATH/bin'
-              cp -f '$REMOTE_PATH/bin/app' '$REMOTE_PATH/bin/app.bak'
-            fi
+            if [ -f '$REMOTE_PATH/.env' ]; then cp -f '$REMOTE_PATH/.env' '$REMOTE_PATH/.env.bak'; fi
+            if [ -f '$REMOTE_PATH/bin/app' ]; then mkdir -p '$REMOTE_PATH/bin'; cp -f '$REMOTE_PATH/bin/app' '$REMOTE_PATH/bin/app.bak'; fi
           "
 
-      # exclusões que não devem ser tocadas no servidor
       - name: Criar arquivo de exclusões
         run: |
           cat > rsync-excludes.txt <<'EOF'
@@ -57,11 +48,10 @@ jobs:
           bin/
           uploads/
           storage/
-          # adicione outros caminhos que só existam no servidor
+          # adicione outros caminhos que só existem no servidor
           EOF
 
-      # sincroniza o CONTEÚDO de ./api preservando .env e bin/
-      - name: Sincronizar pasta api para o servidor (preserva .env e bin)
+      - name: Sincronizar pasta api para o servidor (preserva .env/bin)
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -74,8 +64,7 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=no -p $PORT" \
             ./api/ "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
 
-      - name: Verificar no servidor (opcional)
-        if: always()
+      - name: Build remoto e restart serviço
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -83,9 +72,32 @@ jobs:
           REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
         run: |
           PORT="${{ steps.vars.outputs.PORT }}"
-          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
-            echo 'Conteúdo do destino:'
-            ls -la '$REMOTE_PATH' | head -n 50
-            [ -f '$REMOTE_PATH/.env' ] && echo '.env preservado' || echo 'ATENÇÃO: .env ausente'
-            [ -d '$REMOTE_PATH/bin' ] && ls -la '$REMOTE_PATH/bin' || true
-          "
+          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
+            set -euo pipefail
+            cd "'"$REMOTE_PATH"'"
+            mkdir -p bin
+            GO_BIN="$(command -v go || true)"
+            if [ -z "$GO_BIN" ] && [ -x /snap/bin/go ]; then GO_BIN="/snap/bin/go"; fi
+            if [ -z "$GO_BIN" ] && [ -x /usr/local/go/bin/go ]; then GO_BIN="/usr/local/go/bin/go"; fi
+            if [ -z "$GO_BIN" ]; then echo "Go não encontrado no PATH do servidor"; exit 1; fi
+            "$GO_BIN" version
+            "$GO_BIN" mod tidy
+            "$GO_BIN" build -o bin/app.new .
+            chmod +x bin/app.new
+            mv -f bin/app.new bin/app
+            # tenta reiniciar como serviço do sistema; se não der, tenta serviço de usuário
+            sudo -n systemctl restart api-tranca.service || systemctl --user restart api-tranca.service
+          '
+
+      - name: Verificar status (logs recentes)
+        if: always()
+        env:
+          SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          PORT="${{ steps.vars.outputs.PORT }}"
+          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
+            systemctl is-active api-tranca.service && echo "api-tranca.service ativo" || echo "api-tranca.service inativo ou indisponível"
+            journalctl -u api-tranca.service -n 50 --no-pager || true
+          '
