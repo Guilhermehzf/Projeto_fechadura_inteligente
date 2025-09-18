@@ -75,17 +75,32 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
             set -euo pipefail
             cd "'"$REMOTE_PATH"'"
-            mkdir -p bin
-            GO_BIN="$(command -v go || true)"
-            if [ -z "$GO_BIN" ] && [ -x /snap/bin/go ]; then GO_BIN="/snap/bin/go"; fi
-            if [ -z "$GO_BIN" ] && [ -x /usr/local/go/bin/go ]; then GO_BIN="/usr/local/go/bin/go"; fi
+
+            # prioriza o Go do snap (1.24.6)
+            if [ -x /snap/bin/go ]; then
+              export PATH="/snap/bin:$PATH"
+              GO_BIN="/snap/bin/go"
+            else
+              GO_BIN="$(command -v go || true)"
+            fi
             if [ -z "$GO_BIN" ]; then echo "Go não encontrado no PATH do servidor"; exit 1; fi
+
+            mkdir -p bin
+
+            # normaliza a diretiva do go.mod para major.minor (ex.: go 1.24)
+            if [ -f go.mod ]; then
+              if grep -qE "^go [0-9]+\.[0-9]+\.[0-9]+" go.mod; then
+                sed -i -E "s/^go ([0-9]+\.[0-9]+)\.[0-9]+/go \1/" go.mod
+              fi
+            fi
+
             "$GO_BIN" version
             "$GO_BIN" mod tidy
             "$GO_BIN" build -o bin/app.new .
             chmod +x bin/app.new
             mv -f bin/app.new bin/app
-            # tenta reiniciar como serviço do sistema; se não der, tenta serviço de usuário
+
+            # reinicia serviço (sistema → fallback usuário)
             sudo -n systemctl restart api-tranca.service || systemctl --user restart api-tranca.service
           '
 
