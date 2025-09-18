@@ -1,4 +1,4 @@
-name: Enviar API para o Servidor
+name: Enviar API para o Servidor (preservar .env)
 
 on:
   push:
@@ -20,17 +20,49 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rsync sshpass
 
-      # Copia o CONTEÚDO de ./api para SERVER_APP_PATH (note as barras finais)
-      - name: Sincronizar pasta api para o servidor
+      - name: Definir variáveis
+        id: vars
+        run: |
+          echo "PORT=${{ secrets.SERVER_PORT || 22 }}" >> $GITHUB_OUTPUT
+
+      # 1) Garante que a pasta existe e faz backup do .env se existir
+      - name: Preparar destino e backup de .env
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
-          SSH_PORT: ${{ secrets.SERVER_PORT }} # opcional; crie o secret, senão usa 22
         run: |
-          PORT="${SSH_PORT:-22}"
+          PORT="${{ steps.vars.outputs.PORT }}"
+          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
+            mkdir -p '$REMOTE_PATH' &&
+            if [ -f '$REMOTE_PATH/.env' ]; then
+              cp -f '$REMOTE_PATH/.env' '$REMOTE_PATH/.env.bak'
+            fi
+          "
+
+      # 2) Lista de exclusões que NÃO devem ser tocadas no servidor
+      - name: Criar arquivo de exclusões
+        run: |
+          cat > rsync-excludes.txt <<'EOF'
+          .env
+          .env.*
+          # adicione outros arquivos/pastas do servidor que não estão no repo
+          uploads/
+          storage/
+          EOF
+
+      # 3) Sincroniza SOMENTE o conteúdo de ./api, preservando os excluídos no servidor
+      - name: Sincronizar pasta api para o servidor (preserva .env)
+        env:
+          SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
+        run: |
+          PORT="${{ steps.vars.outputs.PORT }}"
           sshpass -p "$SSH_PASSWORD" rsync -az --delete \
+            --exclude-from=rsync-excludes.txt \
             -e "ssh -o StrictHostKeyChecking=no -p $PORT" \
             ./api/ "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
 
@@ -41,7 +73,9 @@ jobs:
           SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
-          SSH_PORT: ${{ secrets.SERVER_PORT }}
         run: |
-          PORT="${SSH_PORT:-22}"
-          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "ls -la '$REMOTE_PATH' | head -n 50"
+          PORT="${{ steps.vars.outputs.PORT }}"
+          sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "
+            ls -la '$REMOTE_PATH' | head -n 50
+            [ -f '$REMOTE_PATH/.env' ] && echo '.env preservado' || echo 'ATENÇÃO: .env ausente'
+          "
