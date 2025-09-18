@@ -3,7 +3,7 @@ name: Deploy Go API to Server with Password
 on:
   push:
     branches:
-      - main
+      - US-MQTT
     paths:
       - 'api/**'
 

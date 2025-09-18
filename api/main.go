@@ -64,7 +64,7 @@ var messageHandler MQTT.MessageHandler = func(client MQTT.Client, msg MQTT.Messa
 
 // connectHandler é chamado na conexão/reconexão com o broker
 var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
-	log.Println("Conectado ao Broker MQTT!")
+	log.Println("Conectado ao Broker MQTT!!")
 	// Ao conectar, a API se inscreve para ouvir o estado do ESP32.
 	if token := client.Subscribe(mqttTopicState, 1, messageHandler); token.Wait() && token.Error() != nil {
 		log.Printf("Erro ao assinar o tópico: %s\n", token.Error())
