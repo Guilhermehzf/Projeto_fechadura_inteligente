@@ -20,12 +20,15 @@ type Store struct {
 	trancaEstaAberta *bool
 	history          []model.UltimaMensagem
 	maxHistory       int
+
+	updateCh chan struct{} // <<<< novo: fecha/recria para “broadcast”
 }
 
 func NewStore(maxHistory int) *Store {
 	return &Store{
 		lastPayload: make(map[string]interface{}),
 		maxHistory:  maxHistory,
+		updateCh:    make(chan struct{}), // aberto inicialmente
 	}
 }
 
@@ -64,8 +67,6 @@ func (s *Store) UpdateFromMQTT(topic string, qos byte, retained bool, payload []
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.connected = true
 	s.lastSeen = now
 	s.lastTopic = topic
@@ -79,11 +80,19 @@ func (s *Store) UpdateFromMQTT(topic string, qos byte, retained bool, payload []
 	if len(s.history) > s.maxHistory {
 		s.history = s.history[len(s.history)-s.maxHistory:]
 	}
+
+	// acorda todos os “waiters”
+	close(s.updateCh)
+	s.updateCh = make(chan struct{})
+	s.mu.Unlock()
 }
 
 func (s *Store) SetConnected(c bool) {
 	s.mu.Lock()
 	s.connected = c
+	// considera mudança de conectividade como “update”
+	close(s.updateCh)
+	s.updateCh = make(chan struct{})
 	s.mu.Unlock()
 }
 
@@ -109,4 +118,26 @@ func (s *Store) Snapshot(historyLimit int) (connected bool, lastSeen time.Time, 
 	}
 
 	return s.connected, s.lastSeen, s.lastTopic, s.lastQoS, s.lastRetained, s.lastPayloadRaw, payloadCopy, s.trancaEstaAberta, historyOut
+}
+
+// WaitForUpdate bloqueia até lastSeen > since ou timeout.
+func (s *Store) WaitForUpdate(since time.Time, timeout time.Duration) bool {
+	// fast-path: já mudou
+	s.mu.RLock()
+	if s.lastSeen.After(since) {
+		s.mu.RUnlock()
+		return true
+	}
+	ch := s.updateCh
+	s.mu.RUnlock()
+
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+
+	select {
+	case <-ch:
+		return true // houve update (ou conectividade mudou)
+	case <-t.C:
+		return false // timeout
+	}
 }

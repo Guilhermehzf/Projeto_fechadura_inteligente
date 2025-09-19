@@ -2,10 +2,12 @@ name: Enviar API para o Servidor (preservar .env/bin e reiniciar)
 
 on:
   push:
-    branches:
-      - US-MQTT
-    paths:
-      - "api/**"
+    branches: [ US-MQTT ]
+    paths: [ "api/**" ]
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -48,7 +50,6 @@ jobs:
           bin/
           uploads/
           storage/
-          # adicione outros caminhos que só existem no servidor
           EOF
 
       - name: Sincronizar pasta api para o servidor (preserva .env/bin)
@@ -76,7 +77,7 @@ jobs:
             set -euo pipefail
             cd "'"$REMOTE_PATH"'"
 
-            # prioriza o Go do snap (1.24.6)
+            # usa Go do snap se existir
             if [ -x /snap/bin/go ]; then
               export PATH="/snap/bin:$PATH"
               GO_BIN="/snap/bin/go"
@@ -87,7 +88,7 @@ jobs:
 
             mkdir -p bin
 
-            # normaliza a diretiva do go.mod para major.minor (ex.: go 1.24)
+            # normaliza diretiva go.mod (major.minor)
             if [ -f go.mod ]; then
               if grep -qE "^go [0-9]+\.[0-9]+\.[0-9]+" go.mod; then
                 sed -i -E "s/^go ([0-9]+\.[0-9]+)\.[0-9]+/go \1/" go.mod
@@ -96,23 +97,29 @@ jobs:
 
             "$GO_BIN" version
             "$GO_BIN" mod tidy
-            "$GO_BIN" build -o bin/app.new .
+
+            # >>>> AQUI O AJUSTE: buildando o main em cmd/server
+            CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags="-s -w" -o bin/app.new ./cmd/server
+
             chmod +x bin/app.new
             mv -f bin/app.new bin/app
 
-            # reinicia serviço (sistema → fallback usuário)
+            # reinicia serviço (system ou user)
             sudo -n systemctl restart api-tranca.service || systemctl --user restart api-tranca.service
           '
 
-      - name: Verificar status (logs recentes)
+      - name: Verificar status (logs e health)
         if: always()
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_HOST: ${{ secrets.SERVER_HOST }}
+          REMOTE_PATH: ${{ secrets.SERVER_APP_PATH }}
         run: |
           PORT="${{ steps.vars.outputs.PORT }}"
           sshpass -p "$SSH_PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
             systemctl is-active api-tranca.service && echo "api-tranca.service ativo" || echo "api-tranca.service inativo ou indisponível"
-            journalctl -u api-tranca.service -n 50 --no-pager || true
+            # tenta healthz se existir
+            (curl -fsS http://127.0.0.1:8088/healthz && echo "healthz ok") || true
+            journalctl -u api-tranca.service -n 80 --no-pager || true
           '

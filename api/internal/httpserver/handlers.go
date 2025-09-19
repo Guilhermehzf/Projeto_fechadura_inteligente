@@ -53,15 +53,34 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 
 // Status simples e protegido
 func (h *Handlers) StatusSimple(w http.ResponseWriter, r *http.Request) {
-	connected, lastSeen, _, _, _, _, _, tranca, _ :=
-		h.store.Snapshot(0)
+	// Long-poll params
+	q := r.URL.Query()
+	var since time.Time
+	if s := q.Get("since"); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			since = t
+		}
+	}
+	timeout := 25 * time.Second
+	if v := q.Get("timeout"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 && d <= 60*time.Second {
+			timeout = d
+		}
+	}
 
-	// padrão: se não souber o estado da tranca, considera travada (isLocked=true)
+	// Espera mudança (ou segue direto se já mudou)
+	if !h.store.WaitForUpdate(since, timeout) && !since.IsZero() {
+		// timeout sem mudanças → 204
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	connected, lastSeen, _, _, _, _, _, tranca, _ := h.store.Snapshot(0)
+
 	isLocked := true
 	if tranca != nil {
 		isLocked = !*tranca // tranca_aberta=true => isLocked=false
 	}
-
 	last := ""
 	if !lastSeen.IsZero() {
 		last = lastSeen.Format(time.RFC3339)
@@ -70,7 +89,7 @@ func (h *Handlers) StatusSimple(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, model.SimpleStatus{
 		IsLocked:    isLocked,
 		IsConnected: connected,
-		LastUpdate:  last,
+		LastUpdate:  last, // o cliente usa este valor no próximo “since”
 	})
 }
 
