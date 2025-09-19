@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "PORT=${{ secrets.SERVER_PORT || 22 }}" >> $GITHUB_OUTPUT
 
-      - name: Preparar destino e backups (.env e bin/app)
+      - name: Preparar destino e backups (.env e smartlock)
         env:
           SSH_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -39,7 +39,7 @@ jobs:
             set -e
             mkdir -p '$REMOTE_PATH'
             if [ -f '$REMOTE_PATH/.env' ]; then cp -f '$REMOTE_PATH/.env' '$REMOTE_PATH/.env.bak'; fi
-            if [ -f '$REMOTE_PATH/bin/app' ]; then mkdir -p '$REMOTE_PATH/bin'; cp -f '$REMOTE_PATH/bin/app' '$REMOTE_PATH/bin/app.bak'; fi
+            if [ -f '$REMOTE_PATH/smartlock' ]; then cp -f '$REMOTE_PATH/smartlock' '$REMOTE_PATH/smartlock.bak'; fi
           "
 
       - name: Criar arquivo de exclusões
@@ -77,7 +77,6 @@ jobs:
             set -euo pipefail
             cd "'"$REMOTE_PATH"'"
 
-            # usa Go do snap se existir
             if [ -x /snap/bin/go ]; then
               export PATH="/snap/bin:$PATH"
               GO_BIN="/snap/bin/go"
@@ -86,25 +85,20 @@ jobs:
             fi
             if [ -z "$GO_BIN" ]; then echo "Go não encontrado no PATH do servidor"; exit 1; fi
 
-            mkdir -p bin
-
-            # normaliza diretiva go.mod (major.minor)
+            # normaliza versão go.mod (major.minor)
             if [ -f go.mod ]; then
               if grep -qE "^go [0-9]+\.[0-9]+\.[0-9]+" go.mod; then
                 sed -i -E "s/^go ([0-9]+\.[0-9]+)\.[0-9]+/go \1/" go.mod
               fi
             fi
 
-            "$GO_BIN" version
             "$GO_BIN" mod tidy
 
-            # >>>> AQUI O AJUSTE: buildando o main em cmd/server
-            CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags="-s -w" -o bin/app.new ./cmd/server
+            # gera smartlock direto na raiz do projeto
+            CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags="-s -w" -o smartlock ./cmd/server
 
-            chmod +x bin/app.new
-            mv -f bin/app.new bin/app
+            chmod +x smartlock
 
-            # reinicia serviço (system ou user)
             sudo -n systemctl restart api-tranca.service || systemctl --user restart api-tranca.service
           '
 
