@@ -87,10 +87,6 @@ jobs:
             /snap/bin/go mod tidy
             CGO_ENABLED=0 /snap/bin/go build -trimpath -ldflags="-s -w" -o smartlock ./cmd/server
             chmod +x smartlock
-
-            # reinicia limpo
-            systemctl --user daemon-reload
-            systemctl --user start api-tranca.service
           '
 
       - name: Verificar status (logs e health)
