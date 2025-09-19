@@ -77,29 +77,20 @@ jobs:
             set -euo pipefail
             cd "'"$REMOTE_PATH"'"
 
-            if [ -x /snap/bin/go ]; then
-              export PATH="/snap/bin:$PATH"
-              GO_BIN="/snap/bin/go"
-            else
-              GO_BIN="$(command -v go || true)"
-            fi
-            if [ -z "$GO_BIN" ]; then echo "Go não encontrado no PATH do servidor"; exit 1; fi
+            # garante que o serviço não está rodando
+            systemctl --user stop api-tranca.service || true
 
-            # normaliza versão go.mod (major.minor)
-            if [ -f go.mod ]; then
-              if grep -qE "^go [0-9]+\.[0-9]+\.[0-9]+" go.mod; then
-                sed -i -E "s/^go ([0-9]+\.[0-9]+)\.[0-9]+/go \1/" go.mod
-              fi
-            fi
+            # mata qualquer processo ainda preso na porta 8088
+            sudo kill -9 $(sudo lsof -t -i:8088) 2>/dev/null || true
 
-            "$GO_BIN" mod tidy
-
-            # gera smartlock direto na raiz do projeto
-            CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags="-s -w" -o smartlock ./cmd/server
-
+            # builda o binário novo
+            /snap/bin/go mod tidy
+            CGO_ENABLED=0 /snap/bin/go build -trimpath -ldflags="-s -w" -o smartlock ./cmd/server
             chmod +x smartlock
 
-            sudo -n systemctl restart api-tranca.service || systemctl --user restart api-tranca.service
+            # reinicia limpo
+            systemctl --user daemon-reload
+            systemctl --user start api-tranca.service
           '
 
       - name: Verificar status (logs e health)

@@ -46,7 +46,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 			ID    string `json:"id"`
 			Email string `json:"email"`
 			Name  string `json:"name,omitempty"`
-		}{ID: "user-3", Email: req.Email},
+		}{ID: "user-4", Email: req.Email},
 	}
 	writeJSON(w, resp)
 }
