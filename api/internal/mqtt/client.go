@@ -1,6 +1,9 @@
 package mqtt
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -9,6 +12,7 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 
 	"smartlock/internal/config"
+	"smartlock/internal/db"
 	"smartlock/internal/state"
 )
 
@@ -77,8 +81,32 @@ func (c *Client) Start() {
 func (c *Client) onMessage(_ paho.Client, msg paho.Message) {
 	log.Printf(">> MQTT mensagem | tópico=%s qos=%d retained=%v | payload=%s\n",
 		msg.Topic(), msg.Qos(), msg.Retained(), string(msg.Payload()))
+
+	// Atualiza estado interno
 	c.store.UpdateFromMQTT(msg.Topic(), msg.Qos(), msg.Retained(), msg.Payload())
 
+	// Se for o tópico de estado, registra no histórico
+	if msg.Topic() == c.cfg.MQTTTopicState {
+		var payload map[string]any
+		if err := json.Unmarshal(msg.Payload(), &payload); err == nil {
+			action := "locked"
+			method := "auto"
+
+			if v, ok := payload["tranca_aberta"].(bool); ok && v {
+				action = "unlocked"
+			}
+			if v, ok := payload["method"].(string); ok && v != "" {
+				method = v
+			}
+
+			// Insere no histórico
+			if err := db.InsertHistory(context.Background(), c.cfg.DB, action, method); err != nil {
+				fmt.Printf("erro ao salvar histórico MQTT: %v\n", err)
+			}
+		}
+	}
+
+	// Marca retained inicial
 	select {
 	case c.Initial <- struct{}{}:
 	default:

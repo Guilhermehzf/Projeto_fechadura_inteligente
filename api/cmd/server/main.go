@@ -6,12 +6,15 @@ import (
 	"smartlock/internal/httpserver"
 	"smartlock/internal/mqtt"
 	"smartlock/internal/state"
+	"smartlock/internal/db"
 )
 
 func main() {
 	cfg := config.Load()
 
 	store := state.NewStore(cfg.MaxHistory)
+	// conecta ao banco
+	db.Connect()
 
 	mq := mqtt.New(cfg, store)
 	mq.Start()

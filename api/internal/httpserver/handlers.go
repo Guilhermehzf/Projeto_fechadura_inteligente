@@ -2,16 +2,17 @@ package httpserver
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
+	"golang.org/x/crypto/bcrypt"
 
 	"smartlock/internal/auth"
 	"smartlock/internal/config"
 	"smartlock/internal/model"
 	"smartlock/internal/mqtt"
 	"smartlock/internal/state"
+	"smartlock/internal/db"
 )
 
 type Handlers struct {
@@ -25,33 +26,49 @@ func NewHandlers(cfg *config.Config, st *state.Store, mq *mqtt.Client, as *auth.
 	return &Handlers{cfg: cfg, store: st, mqtt: mq, authSvc: as}
 }
 
-// Login permanece igual ao que te passei antes
+// rota login (pública) 
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "use POST", http.StatusMethodNotAllowed)
-		return
-	}
-	var req model.LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Password == "" {
-		http.Error(w, "payload inválido", http.StatusBadRequest)
-		return
-	}
+    if r.Method != http.MethodPost {
+        http.Error(w, "use POST", http.StatusMethodNotAllowed)
+        return
+    }
+    var req model.LoginRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "payload inválido", http.StatusBadRequest)
+        return
+    }
 
-	tok, _ := h.authSvc.Generate("user-1", req.Email)
+    // busca no banco
+    user, err := db.GetUserByEmail(r.Context(), h.cfg.DB, req.Email)
+    if err != nil {
+        http.Error(w, "email ou senha errados", http.StatusUnauthorized)
+        return
+    }
 
-	resp := model.LoginResponse{
-		Success: true,
-		Token:   tok,
-		User: &struct {
-			ID    string `json:"id"`
-			Email string `json:"email"`
-			Name  string `json:"name,omitempty"`
-		}{ID: "user-4", Email: req.Email},
-	}
-	writeJSON(w, resp)
+    // compara senha hash (bcrypt)
+    if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
+        http.Error(w, "email ou senha errados", http.StatusUnauthorized)
+        return
+    }
+
+    // gera token JWT
+    tok, _ := h.authSvc.Generate(user.ID, user.Email)
+
+    resp := model.LoginResponse{
+        Success: true,
+        Token:   tok,
+        User: &struct {
+            ID    string `json:"id"`
+            Email string `json:"email"`
+			Name  string `json:"name"`
+        }{ID: user.ID, Email: user.Email, Name: user.Name},
+    }
+    writeJSON(w, resp)
 }
 
-// Status simples e protegido
+
+
+// Status simples (protegido, com long-poll)
 func (h *Handlers) StatusSimple(w http.ResponseWriter, r *http.Request) {
 	// Long-poll params
 	q := r.URL.Query()
@@ -93,7 +110,7 @@ func (h *Handlers) StatusSimple(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Histórico transformado para HistoryItem[] e protegido
+// Histórico (protegido)
 func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	if q := r.URL.Query().Get("limit"); q != "" {
@@ -102,50 +119,26 @@ func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, _, _, _, _, _, _, _, hist := h.store.Snapshot(limit)
+	ctx := r.Context()
+	hist, err := db.GetHistory(ctx, h.cfg.DB, limit)
+	if err != nil {
+		http.Error(w, "Erro ao consultar histórico", http.StatusInternalServerError)
+		return
+	}
 
 	out := make([]model.HistoryItem, 0, len(hist))
-	for i, um := range hist {
-		// tenta extrair tranca_aberta/method do payload
-		method := "auto"
-		action := ""
-
-		var m map[string]interface{}
-		_ = json.Unmarshal([]byte(um.PayloadRaw), &m)
-
-		if v, ok := m["method"].(string); ok && v != "" {
-			method = v
-		}
-
-		open := false
-		if v, ok := m["tranca_aberta"]; ok {
-			switch t := v.(type) {
-			case bool:
-				open = t
-			case string:
-				open = t == "true" || t == "1"
-			case float64:
-				open = t != 0
-			}
-		}
-		if open {
-			action = "unlocked"
-		} else {
-			action = "locked"
-		}
-
-		id := fmt.Sprintf("%d-%s", i, um.Timestamp)
+	for _, rec := range hist {
 		out = append(out, model.HistoryItem{
-			ID:        id,
-			Action:    action,
-			Timestamp: um.Timestamp,
-			Method:    method,
+			ID:        rec.ID,
+			Action:    rec.Action,
+			Timestamp: rec.Timestamp.Format(time.RFC3339),
+			Method:    rec.Method,
 		})
 	}
 
 	writeJSON(w, model.HistoryResponse{History: out})
 }
-
+// Toggle (protegido)
 func (h *Handlers) Toggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)

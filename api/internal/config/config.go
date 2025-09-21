@@ -1,11 +1,13 @@
 package config
 
 import (
+	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"time"
-	"fmt"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 )
 
@@ -19,14 +21,29 @@ type Config struct {
 	MQTTTopicState    string
 	MQTTTopicCommands string
 
-	JWTSecret         string
-	JWTExpiry         time.Duration
+	JWTSecret  string
+	JWTExpiry  time.Duration
 
-	MaxHistory        int
+	DB         *sql.DB
+	MaxHistory int
 }
 
 func Load() *Config {
 	_ = godotenv.Load()
+
+	// Pega a string de conexão do .env
+	dsn := must("POSTGRES_ENDPOINT")
+
+	// Abre conexão com Postgres
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		log.Fatalf("Erro ao abrir conexão com Postgres: %v", err)
+	}
+
+	// Testa conexão
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Banco de dados inacessível: %v", err)
+	}
 
 	cfg := &Config{
 		HTTPAddr:          getenv("HTTP_ADDR", "0.0.0.0:8088"),
@@ -39,6 +56,7 @@ func Load() *Config {
 		JWTSecret:         getenv("JWT_SECRET", "dev-secret-change-me"),
 		JWTExpiry:         getDuration("JWT_EXP_MINUTES", 60),
 		MaxHistory:        getInt("MAX_HISTORY", 200),
+		DB:                db,
 	}
 
 	return cfg
@@ -63,7 +81,9 @@ func getInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		var n int
 		_, _ = fmt.Sscanf(v, "%d", &n)
-		if n > 0 { return n }
+		if n > 0 {
+			return n
+		}
 	}
 	return def
 }
@@ -72,7 +92,9 @@ func getDuration(key string, defMinutes int) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		var n int
 		_, _ = fmt.Sscanf(v, "%d", &n)
-		if n > 0 { return time.Duration(n) * time.Minute }
+		if n > 0 {
+			return time.Duration(n) * time.Minute
+		}
 	}
 	return time.Duration(defMinutes) * time.Minute
 }
