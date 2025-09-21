@@ -35,5 +35,5 @@ func Connect() {
 		log.Fatalf("Erro no ping ao PostgreSQL: %v", err)
 	}
 
-	log.Println("Conexão com PostgreSQL estabelecida com sucesso!!")
+	log.Println("Conexão com PostgreSQL estabelecida com sucesso!")
 }
