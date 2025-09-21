@@ -72,6 +72,7 @@ void reconnect() {
     if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
       Serial.println("conectado!");
       client.subscribe(MQTT_TOPIC_COMMANDS);
+      publish_current_state();
     } else {
       Serial.printf("falhou, rc=%d tentando novamente em 5 segundos\n", client.state());
       delay(5000);
