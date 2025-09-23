@@ -5,92 +5,33 @@
 #include "EEPROMHandler.h"
 #include "WiFiConfig.h"
 #include "MqttHandler.h"
-
-// --- Variáveis Globais ---
-String senhaAtual;
-const String senhaMestra = "0000";
-String bufferNormal = "";
-String bufferProgramacao = "";
-bool modoProgramacao = false;
-bool trancaAberta = true; 
-
-// --- Protótipos ---
-void tratarModoProgramacao(char tecla);
-void tratarModoNormal(char tecla);
+#include "LockControl.h"
+#include "PasswordLogic.h"
 
 void setup() {
-    Serial.begin(115200);
-    setupLeds();
-    setupLcd();
-    setupEeprom();
-    setup_wifi();
-    setup_mqtt();
-    senhaAtual = lerSenhaDaEeprom();
-    atualizarLeds(trancaAberta);
-    exibirMensagemInicial();
+  Serial.begin(115200);
+
+  // hardware primeiro (sempre offline-friendly)
+  setupLeds();
+  setupLcd();
+  setupEeprom();
+
+  lock_init(true);       // mostra LED/LCD conforme estado inicial
+  password_init();       // carrega senha + prepara buffers
+
+  // rede NÃO-bloqueante
+  wifi_setup_nonblocking();
+  mqtt_setup();
 }
 
 void loop() {
-    verificarTimeoutMensagem();
-    mqtt_loop();
-    char tecla = lerTecla();
-    if (tecla) {
-        if (modoProgramacao) {
-            tratarModoProgramacao(tecla);
-        } else {
-            tratarModoNormal(tecla);
-        }
-    }
-}
+  // rede em background
+  wifi_tick();
+  mqtt_tick();
 
-// === FUNÇÃO CORRIGIDA ===
-void tratarModoNormal(char tecla) {
-    // A LINHA QUE FALTAVA FOI ADICIONADA AQUI
-    bufferNormal += tecla;
+  // teclado SEMPRE funciona
+  char k = lerTecla();
+  if (k) password_onKey(k);
 
-    if (bufferNormal.endsWith(senhaMestra)) {
-        bufferNormal = "";
-        modoProgramacao = true;
-        exibirModoProgramacao(bufferProgramacao);
-        return;
-    }
-
-    if (bufferNormal.endsWith(senhaAtual)) {
-        bufferNormal = "";
-        
-        // 1. AÇÃO IMEDIATA: Mude o estado e o hardware localmente
-        Serial.println("Senha correta! Trocando estado localmente...");
-        trancaAberta = !trancaAberta; 
-        atualizarLeds(trancaAberta);
-        if (trancaAberta) {
-            exibirAcessoLiberado();
-        } else {
-            exibirTrancado();
-        }
-
-        // 2. NOTIFICAÇÃO: Avise a nuvem sobre o novo estado
-        publish_current_state();
-    }
-}
-
-void tratarModoProgramacao(char tecla) {
-    if (tecla == '#') {
-        if (bufferProgramacao.length() > 0) {
-            salvarSenhaNaEeprom(bufferProgramacao);
-            senhaAtual = bufferProgramacao;
-        }
-        bufferProgramacao = "";
-        modoProgramacao = false;
-        exibirMensagemInicial();
-    } else if (tecla == '*') {
-        if (bufferProgramacao.length() > 0) {
-            bufferProgramacao.remove(bufferProgramacao.length() - 1);
-        }
-        exibirModoProgramacao(bufferProgramacao);
-    } else {
-        if (bufferProgramacao.length() < 10) {
-            bufferProgramacao += tecla;
-        }
-        exibirModoProgramacao(bufferProgramacao);
-    }
+  verificarTimeoutMensagem(); // se você usa timeouts na LCD
 }

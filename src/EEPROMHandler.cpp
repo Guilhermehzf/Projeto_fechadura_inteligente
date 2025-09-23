@@ -1,9 +1,10 @@
 #include "EEPROMHandler.h"
 #include <EEPROM.h>
+#include "secrets.h"
 
 const int EEPROM_START_ADDR = 0;
 const int EEPROM_SIZE = 64;
-const String SENHA_PADRAO = "1234";
+const String SENHA_PADRAO = PASSWORD;
 const int TAMANHO_MAX_SENHA = 10;
 
 void setupEeprom() {

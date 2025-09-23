@@ -2,35 +2,72 @@
 #include <WiFi.h>
 #include "secrets.h"
 
-// DESCOMENTE A LINHA ABAIXO PARA RODAR NO SIMULADOR WOKWI
+// DESCOMENTE para Wokwi
 #define WOKWI_SIMULATION
 
 #ifdef WOKWI_SIMULATION
-  // --- CONFIGURAÇÃO PARA O SIMULADOR WOKWI ---
-  const char* ssid = "Wokwi-GUEST";
-  const char* password = "";
+  static const char* ssid = "Wokwi-GUEST";
+  static const char* pass = "";
 #else
-  // --- CONFIGURAÇÃO PARA SUA PLACA REAL ---
-  // --- COLOQUE AS CREDENCIAIS DA SUA REDE WI-FI AQUI ---
-  const char* ssid = SECRET_WIFI_SSID;
-  const char* password = SECRET_WIFI_PASS;
+  static const char* ssid = SECRET_WIFI_SSID;
+  static const char* pass = SECRET_WIFI_PASS;
 #endif
 
-void setup_wifi() {
-  delay(10);
-  Serial.println();
-  Serial.print("Conectando-se a ");
-  Serial.println(ssid);
+enum class WifiState { Idle, Connecting, Connected };
+static WifiState st = WifiState::Idle;
+static unsigned long lastTry = 0;
+static const unsigned long RETRY_MS = 3000;
+static bool everPrintIP = false;
 
-  WiFi.begin(ssid, password);
+void wifi_setup_nonblocking()
+{
+  WiFi.mode(WIFI_STA);
+  st = WifiState::Idle;
+  everPrintIP = false;
+}
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+void wifi_tick()
+{
+  unsigned long now = millis();
+
+  if (st == WifiState::Idle) {
+    if (now - lastTry >= 10) {
+      lastTry = now;
+      WiFi.begin(ssid, pass);
+      st = WifiState::Connecting;
+      Serial.printf("[WiFi] Conectando em '%s'...\n", ssid);
+    }
+    return;
   }
 
-  Serial.println("");
-  Serial.println("WiFi conectado!");
-  Serial.print("Endereço IP: ");
-  Serial.println(WiFi.localIP());
+  if (st == WifiState::Connecting) {
+    wl_status_t s = WiFi.status();
+    if (s == WL_CONNECTED) {
+      st = WifiState::Connected;
+      if (!everPrintIP) {
+        everPrintIP = true;
+        Serial.printf("[WiFi] Conectado, IP=%s\n", WiFi.localIP().toString().c_str());
+      }
+    } else if (s == WL_CONNECT_FAILED || s == WL_NO_SSID_AVAIL || s == WL_DISCONNECTED) {
+      if (now - lastTry >= RETRY_MS) {
+        lastTry = now;
+        WiFi.disconnect(true);
+        WiFi.begin(ssid, pass);
+        Serial.println("[WiFi] Re-tentando...");
+      }
+    }
+    return;
+  }
+
+  if (st == WifiState::Connected) {
+    if (WiFi.status() != WL_CONNECTED) {
+      st = WifiState::Idle; // caiu → recomeça
+      Serial.println("[WiFi] Desconectado.");
+    }
+  }
+}
+
+bool wifi_is_connected()
+{
+  return WiFi.status() == WL_CONNECTED;
 }

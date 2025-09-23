@@ -1,94 +1,112 @@
-// src/MqttHandler.cpp
 #include "MqttHandler.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include "main.h"         
-#include "LedControl.h"   
-#include "LCDInterface.h"
 #include <ArduinoJson.h>
+#include "main.h"
+#include "LedControl.h"
+#include "LCDInterface.h"
 #include "secrets.h"
 
-// --- SUAS CREDENCIAIS DO HIVEMQ ---
-const char* MQTT_BROKER = SECRET_MQTT_BROKER;
-const int   MQTT_PORT = SECRET_MQTT_PORT;
-const char* MQTT_USER = SECRET_MQTT_USER;
-const char* MQTT_PASS = SECRET_MQTT_PASS;
+// Credenciais
+static const char* MQTT_BROKER = SECRET_MQTT_BROKER;
+static const int   MQTT_PORT   = SECRET_MQTT_PORT;
+static const char* MQTT_USER   = SECRET_MQTT_USER;
+static const char* MQTT_PASS   = SECRET_MQTT_PASS;
 
-// --- TÓPICOS ---
-const char* MQTT_TOPIC_COMMANDS = "fechadura/comandos";
-const char* MQTT_TOPIC_STATE = "fechadura/estado";
+// Tópicos
+static const char* MQTT_TOPIC_COMMANDS = "fechadura/comandos";
+static const char* MQTT_TOPIC_STATE    = "fechadura/estado";
 
-WiFiClientSecure espClient;
-PubSubClient client(espClient);
+static WiFiClientSecure espClient;
+static PubSubClient client(espClient);
 
-void publish_current_state() {
-  if (client.connected()) {
-    // 1. Cria um documento JSON para montar a mensagem
-    JsonDocument doc;
-    doc["tranca_aberta"] = trancaAberta;
+// Publicação pendente quando offline
+static bool publishPending = false;
 
-    // 2. Converte o JSON para uma string
-    String output;
-    serializeJson(doc, output);
+// Backoff de reconexão
+static unsigned long lastMqttAttempt = 0;
+static const unsigned long MQTT_RETRY_MS = 3000;
 
-    // 3. Publica a string JSON no tópico de estado COM A FLAG DE RETENÇÃO (true)
-    client.publish(MQTT_TOPIC_STATE, output.c_str(), true);
-    Serial.printf("Estado JSON (%s) publicado (com retenção) no tópico %s\n", output.c_str(), MQTT_TOPIC_STATE);
-  }
-}
+static void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
+  Serial.printf("[MQTT] RX topic=%s len=%u\n", topic, length);
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.printf("Mensagem recebida no tópico %s\n", topic);
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload, length);
-
-  if (error) {
-    Serial.printf("Falha ao analisar JSON: %s\n", error.c_str());
+  StaticJsonDocument<128> doc;
+  DeserializationError err = deserializeJson(doc, payload, length);
+  if (err) {
+    Serial.printf("[MQTT] JSON inválido: %s\n", err.c_str());
     return;
   }
 
   const char* command = doc["command"];
   if (command && strcmp(command, "toggle") == 0) {
-    Serial.println("Comando 'toggle' remoto recebido! Alterando estado.");
     trancaAberta = !trancaAberta;
-    
     atualizarLeds(trancaAberta);
-    if (trancaAberta) {
-      exibirAcessoLiberado();
-    } else {
-      exibirTrancado();
-    }
-    
-    // Após um comando remoto, publicamos o novo estado como confirmação
+    if (trancaAberta) exibirAcessoLiberado();
+    else              exibirTrancado();
+
+    // confirma novo estado
     publish_current_state();
   }
 }
 
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Tentando conectar ao Broker MQTT...");
-    String clientId = "esp32-fechadura-" + WiFi.macAddress();
-    if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
-      Serial.println("conectado!");
-      client.subscribe(MQTT_TOPIC_COMMANDS);
-      publish_current_state();
-    } else {
-      Serial.printf("falhou, rc=%d tentando novamente em 5 segundos\n", client.state());
-      delay(5000);
-    }
+void publish_current_state() {
+  // Monta JSON { "tranca_aberta": <bool> }
+  StaticJsonDocument<64> doc;
+  doc["tranca_aberta"] = trancaAberta;
+
+  char buf[64];
+  size_t n = serializeJson(doc, buf, sizeof(buf));
+
+  if (client.connected()) {
+    bool ok = client.publish(
+      MQTT_TOPIC_STATE,
+      reinterpret_cast<const uint8_t*>(buf),
+      static_cast<unsigned int>(n),
+      true
+    );// retained
+    Serial.printf("[MQTT] publish estado '%s': %s\n", buf, ok ? "OK" : "FAIL");
+    if (!ok) publishPending = true;
+  } else {
+    publishPending = true; // envia quando reconectar
   }
 }
 
-void setup_mqtt() {
-  espClient.setInsecure();
-  client.setServer(MQTT_BROKER, MQTT_PORT);
-  client.setCallback(callback);
+static void mqtt_connect_once() {
+  if (client.connected()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  String cid = "esp32-fechadura-" + WiFi.macAddress();
+  if (client.connect(cid.c_str(), MQTT_USER, MQTT_PASS)) {
+    Serial.println("[MQTT] conectado!");
+    client.subscribe(MQTT_TOPIC_COMMANDS);
+
+    // publica retained na conexão (ou o que ficou pendente)
+    if (publishPending) {
+      publishPending = false;
+      publish_current_state();
+    } else {
+      publish_current_state();
+    }
+  } else {
+    Serial.printf("[MQTT] falhou rc=%d\n", client.state());
+  }
 }
 
-void mqtt_loop() {
+void mqtt_setup() {
+  espClient.setInsecure();               // TLS sem verificação de CA
+  client.setServer(MQTT_BROKER, MQTT_PORT);
+  client.setCallback(mqtt_on_message);
+}
+
+void mqtt_tick() {
   if (!client.connected()) {
-    reconnect();
+    unsigned long now = millis();
+    if (now - lastMqttAttempt >= MQTT_RETRY_MS) {
+      lastMqttAttempt = now;
+      mqtt_connect_once();
+    }
+    return;
   }
   client.loop();
 }
