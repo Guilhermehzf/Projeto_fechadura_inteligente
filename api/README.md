@@ -1,5 +1,8 @@
 
 # 🚪 API Trancarduino (Backend em Go)
+![GOlang](https://img.shields.io/badge/golang-00ADD8?&style=plastic&logo=go&logoColor=white)
+![Vscode](https://img.shields.io/badge/Visual%20Studio%20Code-007ACC?logo=visualstudiocode&logoColor=fff&style=plastic)
+![MQTT](https://img.shields.io/badge/Mqtt-lightgrey?logo=mqtt)
 
 ## 📖 Visão Geral
 

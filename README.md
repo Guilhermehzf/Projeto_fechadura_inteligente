@@ -1,8 +1,8 @@
 # 🚪 Fechadura Inteligente com ESP32, MQTT e Duplo Display
 
-![ESP32](https://img.shields.io/badge/ESP32-WROOM-blueviolet)
-![Arduino](https://img.shields.io/badge/Framework-Arduino-00979D)
-![MQTT](https://img.shields.io/badge/Protocolo-MQTT-red)
+![ESP32](https://img.shields.io/badge/Platform-ESP32-informational?style=flat&logo=Arduino&logoColor=white&color=00979D)
+![Vscode](https://img.shields.io/badge/Visual%20Studio%20Code-007ACC?logo=visualstudiocode&logoColor=fff&style=plastic)
+![MQTT](https://img.shields.io/badge/Mqtt-lightgrey?logo=mqtt)
 
 ## 📖 Sobre o Projeto
 
