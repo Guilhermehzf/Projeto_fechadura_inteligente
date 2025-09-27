@@ -40,7 +40,7 @@ A principal característica do sistema é sua **interface de usuário dupla**: u
 
 A imagem abaixo ilustra a montagem completa do circuito.
 
-**![Insira a imagem do seu esquema aqui](https://i.imgur.com/your-schematic-image.png)**
+**![Insira a imagem do seu esquema aqui](https://imgur.com/a/mhCOtGb)**
 *(Substitua o link acima pelo caminho da imagem do seu esquema)*
 
 ### Tabela de Pinagem
