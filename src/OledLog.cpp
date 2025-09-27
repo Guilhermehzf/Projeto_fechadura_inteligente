@@ -9,7 +9,6 @@ Adafruit_SSD1306 OLED_DISPLAY(128, 64, &Wire, -1);
 OledTerminal OLED_TERM(&OLED_DISPLAY);
 
 void oledlog_setup() {
-  Wire.begin(OLED_SDA, OLED_SCL);
   if (!OLED_DISPLAY.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
     return; // segue sem OLED
   }

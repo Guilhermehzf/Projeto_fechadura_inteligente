@@ -7,12 +7,14 @@
 #include "MqttHandler.h"
 #include "LockControl.h"
 #include "PasswordLogic.h"
+#include <Wire.h>
 
 #include "Log.h"
 #include "OledLog.h"
 
 void setup() {
   Serial.begin(115200);
+  Wire.begin(21, 22);
 
   // Configura o OLED
   oledlog_setup();
