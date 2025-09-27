@@ -3,7 +3,7 @@ name: Enviar API para o Servidor (preservar .env/bin e reiniciar)
 on:
   push:
     branches: [ US-MQTT ]
-    paths: [ "api/**" ]
+    paths: [ "api/internal/**" ]
 
 concurrency:
   group: deploy-api

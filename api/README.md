@@ -194,10 +194,6 @@ Envia um comando para alternar o estado da fechadura.
 5. Envie a branch para o repositório (`git push origin minha-nova-feature`).
 6. Abra um pull request.
 
-## 📄 Licença
-
-Este projeto está licenciado sob a MIT License - consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
-
 ---
 
-Feito com 💙 por [Seu Nome](https://seunome.com)
+Feito com 💙 por [Guilherme Henrique Zioli](https://portfolio.ghzds.com.br/)
