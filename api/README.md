@@ -43,8 +43,26 @@ A arquitetura da API é composta por três componentes principais:
 
 ### 2. Banco de Dados
 
-1. **Iniciar o banco com Docker:**
+1. **Configurar o arquivo docker-compose.yml Iniciar o banco com Docker:**  
+    ```yml
+    services:
+      postgres:
+        image: postgres:16
+        container_name: tranca_inteligente_db
+        restart: unless-stopped
+        ports:
+          - "5432:5432"
+        environment:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: tranca_inteligente
+        volumes:
+          - pgdata:/var/lib/postgresql/data
 
+    volumes:
+      pgdata:
+
+    ```
     ```bash
     docker-compose up -d
     ```
