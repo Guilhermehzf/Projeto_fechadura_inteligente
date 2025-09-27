@@ -3,16 +3,21 @@
 
 #include <Arduino.h>
 
-// exposto para outros módulos (MQTT/handlers)
+// Estado global exposto (usado pelo MQTT/Password)
 extern bool trancaAberta;
 
-// inicializa estado e hardware
+// Pino do relé/fechadura (ajuste se necessário para seu hardware)
+#ifndef RELAY_PIN
+#define RELAY_PIN 26
+#endif
+
+// Inicializa estado e hardware (LED, LCD e relé)
 void lock_init(bool abertaInicial);
 
-// aplica estado (atualiza LED/LCD) e agenda publish (se possível)
+// Aplica estado (atualiza LED, LCD, relé) e publica no MQTT
 void lock_apply(bool aberta, const char* method = "local");
 
-// alterna estado atual
+// Alterna o estado atual
 void lock_toggle(const char* method = "local");
 
 #endif

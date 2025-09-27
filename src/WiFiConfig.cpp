@@ -1,9 +1,10 @@
 #include "WiFiConfig.h"
 #include <WiFi.h>
 #include "secrets.h"
+#include "Log.h"
 
 // DESCOMENTE para Wokwi
-#define WOKWI_SIMULATION
+//#define WOKWI_SIMULATION
 
 #ifdef WOKWI_SIMULATION
   static const char* ssid = "Wokwi-GUEST";
@@ -35,7 +36,7 @@ void wifi_tick()
       lastTry = now;
       WiFi.begin(ssid, pass);
       st = WifiState::Connecting;
-      Serial.printf("[WiFi] Conectando em '%s'...\n", ssid);
+      LOGF("[WiFi] Conectando em '%s'...\n", ssid);
     }
     return;
   }
@@ -46,14 +47,14 @@ void wifi_tick()
       st = WifiState::Connected;
       if (!everPrintIP) {
         everPrintIP = true;
-        Serial.printf("[WiFi] Conectado, IP=%s\n", WiFi.localIP().toString().c_str());
+        LOGF("[WiFi] Conectado, IP=%s\n", WiFi.localIP().toString().c_str());
       }
     } else if (s == WL_CONNECT_FAILED || s == WL_NO_SSID_AVAIL || s == WL_DISCONNECTED) {
       if (now - lastTry >= RETRY_MS) {
         lastTry = now;
         WiFi.disconnect(true);
         WiFi.begin(ssid, pass);
-        Serial.println("[WiFi] Re-tentando...");
+        LOG.println("[WiFi] Re-Conectando...");
       }
     }
     return;
@@ -62,7 +63,7 @@ void wifi_tick()
   if (st == WifiState::Connected) {
     if (WiFi.status() != WL_CONNECTED) {
       st = WifiState::Idle; // caiu → recomeça
-      Serial.println("[WiFi] Desconectado.");
+      LOG.println("[WiFi] Desconectado.");
     }
   }
 }

@@ -1,11 +1,16 @@
 #ifndef LED_CONTROL_H
 #define LED_CONTROL_H
 
-// Inicializa os pinos dos LEDs.
+// Pino do relé (ajuste se necessário)
+#ifndef RELAY_PIN
+#define RELAY_PIN 26
+#endif
+
+// Inicializa o pino do relé.
 void setupLeds();
 
-// Atualiza os LEDs com base no estado da tranca.
-// true para aberta (verde), false para fechada (vermelho).
+// Atualiza o relé com base no estado da tranca.
+// true = aberto (HIGH), false = trancado (LOW).
 void atualizarLeds(bool trancaAberta);
 
 #endif

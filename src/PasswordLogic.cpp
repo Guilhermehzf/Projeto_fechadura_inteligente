@@ -18,6 +18,7 @@ void password_init()
   bufferProg   = "";
   modoProg     = false;
   exibirMensagemInicial();
+  exibirDigitacaoNormal(bufferNormal);   // limpa a 2ª linha
 }
 
 static void entrarModoProg()
@@ -32,11 +33,28 @@ static void sairModoProg()
   modoProg = false;
   bufferProg = "";
   exibirMensagemInicial();
+  exibirDigitacaoNormal(bufferNormal); // garante linha limpa ao sair
 }
 
 static void tratarNormal(char k)
 {
+  // backspace no modo normal: usa '*'
+  if (k == '*') {
+    if (bufferNormal.length() > 0) {
+      bufferNormal.remove(bufferNormal.length() - 1);
+    }
+    exibirDigitacaoNormal(bufferNormal);
+    return;
+  }
+
+  // ignora '#' no modo normal (sem ação)
+  if (k == '#') {
+    return;
+  }
+
+  // acumula a tecla e atualiza máscara
   bufferNormal += k;
+  exibirDigitacaoNormal(bufferNormal);
 
   // senha mestra → entra programação
   if (bufferNormal.endsWith(senhaMestra)) {
@@ -45,10 +63,12 @@ static void tratarNormal(char k)
     return;
   }
 
-  // senha atual → alterna tranca LOCALMENTE (sem rede)
+  // senha normal → alterna tranca
   if (bufferNormal.endsWith(senhaAtual)) {
     bufferNormal = "";
-    lock_toggle("keypad");   // atualiza LED/LCD agora; publish é assíncrono
+    lock_toggle("keypad");        // atualiza LED/LCD
+    exibirMensagemInicial();      // volta tela
+    exibirDigitacaoNormal(bufferNormal); // limpa máscara
   }
 }
 

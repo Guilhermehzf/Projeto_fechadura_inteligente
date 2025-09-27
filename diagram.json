@@ -44,7 +44,7 @@
     [ "lcd1:SCL", "esp:22", "green", [ "v134.7", "h297.6" ] ],
     [ "led1:C", "esp:GND.1", "black", [ "v0" ] ],
     [ "led2:C", "esp:GND.1", "black", [ "v0" ] ],
-    [ "led2:A", "esp:27", "red", [ "v0" ] ],
+    [ "led2:A", "esp:26", "red", [ "v0" ] ],
     [ "led1:A", "esp:25", "green", [ "v0" ] ]
   ],
   "dependencies": {}

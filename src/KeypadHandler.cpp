@@ -1,22 +1,25 @@
 #include "KeypadHandler.h"
 #include <Keypad.h>
+#include "Log.h"
 
 const byte ROWS = 4;
-const byte COLS = 4;
+const byte COLS = 3;
 
 char keys[ROWS][COLS] = {
-    {'1','2','3','A'},
-    {'4','5','6','B'},
-    {'7','8','9','C'},
-    {'*','0','#','D'}
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
 };
 
+// 🔧 TROQUE a ordem das colunas: era {16, 4, 2}
 byte rowPins[ROWS] = {19, 18, 5, 17};
-byte colPins[COLS] = {16, 4, 2, 15};
+byte colPins[COLS] = { 33, 32, 25};  // ← invertido (da esquerda p/ direita)
 
-// O objeto do teclado fica encapsulado aqui.
-Keypad customKeypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+Keypad kp = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
 char lerTecla() {
-    return customKeypad.getKey();
+  char k = kp.getKey();
+  if (k) LOGF("[KEYPAD] key='%c'\n", k); // debug
+  return k;
 }

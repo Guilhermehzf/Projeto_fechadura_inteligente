@@ -8,6 +8,8 @@
 #include "LCDInterface.h"
 #include "secrets.h"
 
+#include "Log.h"
+
 // Credenciais
 static const char* MQTT_BROKER = SECRET_MQTT_BROKER;
 static const int   MQTT_PORT   = SECRET_MQTT_PORT;
@@ -29,12 +31,12 @@ static unsigned long lastMqttAttempt = 0;
 static const unsigned long MQTT_RETRY_MS = 3000;
 
 static void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
-  Serial.printf("[MQTT] RX topic=%s len=%u\n", topic, length);
+  LOGF("[MQTT] RX topic=%s len=%u\n", topic, length);
 
   StaticJsonDocument<128> doc;
   DeserializationError err = deserializeJson(doc, payload, length);
   if (err) {
-    Serial.printf("[MQTT] JSON inválido: %s\n", err.c_str());
+    LOGF("[MQTT] JSON inválido: %s\n", err.c_str());
     return;
   }
 
@@ -65,7 +67,7 @@ void publish_current_state() {
       static_cast<unsigned int>(n),
       true
     );// retained
-    Serial.printf("[MQTT] publish estado '%s': %s\n", buf, ok ? "OK" : "FAIL");
+    LOGF("[MQTT] publish estado '%s': %s\n", buf, ok ? "OK" : "FAIL");
     if (!ok) publishPending = true;
   } else {
     publishPending = true; // envia quando reconectar
@@ -78,7 +80,7 @@ static void mqtt_connect_once() {
 
   String cid = "esp32-fechadura-" + WiFi.macAddress();
   if (client.connect(cid.c_str(), MQTT_USER, MQTT_PASS)) {
-    Serial.println("[MQTT] conectado!");
+    LOG.println("[MQTT] conectado!");
     client.subscribe(MQTT_TOPIC_COMMANDS);
 
     // publica retained na conexão (ou o que ficou pendente)
@@ -89,7 +91,7 @@ static void mqtt_connect_once() {
       publish_current_state();
     }
   } else {
-    Serial.printf("[MQTT] falhou rc=%d\n", client.state());
+    LOGF("[MQTT] falhou rc=%d\n", client.state());
   }
 }
 

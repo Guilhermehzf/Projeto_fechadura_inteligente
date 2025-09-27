@@ -7,14 +7,22 @@ bool trancaAberta = true;
 
 static void render_lock()
 {
+  // LEDs e LCD
   atualizarLeds(trancaAberta);
-  if (trancaAberta) exibirAcessoLiberado();
-  else              exibirTrancado();
+  if (trancaAberta) {
+    exibirAcessoLiberado();
+  } else {
+    exibirTrancado();
+  }
 }
 
 void lock_init(bool abertaInicial)
 {
   trancaAberta = abertaInicial;
+
+  // Garante controle do relé
+  pinMode(RELAY_PIN, OUTPUT);
+
   render_lock();
 }
 

@@ -1,15 +1,13 @@
 #include "LedControl.h"
 #include <Arduino.h>
 
-const int ledVerde = 25;
-const int ledVermelho = 27;
-
 void setupLeds() {
-    pinMode(ledVerde, OUTPUT);
-    pinMode(ledVermelho, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  // estado inicial: ABERTO = LOW
+  digitalWrite(RELAY_PIN, LOW);
 }
 
 void atualizarLeds(bool trancaAberta) {
-    digitalWrite(ledVerde, trancaAberta ? HIGH : LOW);
-    digitalWrite(ledVermelho, trancaAberta ? LOW : HIGH);
+  // LOW = aberto; HIGH = trancado
+  digitalWrite(RELAY_PIN, trancaAberta ? LOW : HIGH);
 }
