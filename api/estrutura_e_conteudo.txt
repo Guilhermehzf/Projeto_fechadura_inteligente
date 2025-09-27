@@ -1,0 +1,933 @@
+api/cmd/server/main.go
+package main
+
+import (
+	"smartlock/internal/auth"
+	"smartlock/internal/config"
+	"smartlock/internal/httpserver"
+	"smartlock/internal/mqtt"
+	"smartlock/internal/state"
+	"smartlock/internal/db"
+)
+
+func main() {
+	cfg := config.Load()
+
+	store := state.NewStore(cfg.MaxHistory)
+	// conecta ao banco
+	db.Connect()
+
+	mq := mqtt.New(cfg, store)
+	mq.Start()
+
+	authSvc := auth.New(cfg.JWTSecret, cfg.JWTExpiry)
+
+	server := httpserver.NewServer(cfg, store, mq, authSvc)
+	server.Start()
+}
+
+
+api/cmd/hash/gen_senha.go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+
+var senha string
+
+func main() {
+	gen_senha()
+}
+func gen_senha() {
+	senha = ""
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(senha), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatalf("Erro ao gerar hash: %v", err)
+	}
+
+	fmt.Println("Senha:", senha)
+	fmt.Println("Hash bcrypt:", string(hash))
+}
+
+
+
+api/estrutura_e_conteudo.txt
+
+
+api/.env
+# MQTT configuration
+MQTT_BROKER = "mqtts://0dfb02c89e7f487f9a2f8e5e29729297.s1.eu.hivemq.cloud:8883"
+MQTT_CLIENT_ID = "api-go-client-final"
+MQTT_USER = "go-api-localhost"
+MQTT_PASS = "Go-api-localhost1!" 
+MQTT_TOPIC_COMMANDS = "fechadura/comandos"
+MQTT_TOPIC_STATE = "fechadura/estado"
+
+# Server configuration
+HTTP_ADDR="0.0.0.0:8088"
+
+# database configuration
+POSTGRES_ENDPOINT=postgres://admin:admin@localhost:5432/tranca_inteligente?sslmode=disable
+
+#server side
+#POSTGRES_ENDPOINT=postgres://tranca_user:Gatitcha1@localhost:8080/tranca_inteligente?sslmode=disable
+
+# JWT configuration
+#JWT_SECRET=troque-isto-no-prod
+JWT_SECRET="?)nMfi?xLftp@ByuND8+h}JY~~C4]Mvn9.9eu.swV9.Vb6z#rJ1cKBMk#Z:H"
+JWT_EXP_MINUTES=60
+MAX_HISTORY=200
+
+
+api/internal/db/db.go
+package db
+
+import (
+	"context"
+	"log"
+	"os"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var Pool *pgxpool.Pool
+
+func Connect() {
+	dsn := os.Getenv("POSTGRES_ENDPOINT")
+	if dsn == "" {
+		log.Fatal("Variável POSTGRES_ENDPOINT não definida")
+	}
+
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		log.Fatalf("Erro parseando config: %v", err)
+	}
+
+	// Timeout de conexão
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	Pool, err = pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Erro conectando ao PostgreSQL: %v", err)
+	}
+
+	if err := Pool.Ping(ctx); err != nil {
+		log.Fatalf("Erro no ping ao PostgreSQL: %v", err)
+	}
+
+	log.Println("Conexão com PostgreSQL estabelecida com sucesso!")
+}
+
+
+api/internal/db/users.go
+package db
+
+import (
+    "context"
+    "database/sql"
+    _ "github.com/jackc/pgx/v5/stdlib"
+)
+
+type User struct {
+    ID       string
+    Email    string
+    Password string
+    Name     string
+}
+
+// SELECT * FROM users WHERE email=...
+func GetUserByEmail(ctx context.Context, pool *sql.DB, email string) (*User, error) {
+    row := pool.QueryRowContext(ctx,
+        "SELECT id, email, password, name FROM users WHERE email=$1 LIMIT 1", email)
+
+    u := User{}
+    if err := row.Scan(&u.ID, &u.Email, &u.Password, &u.Name); err != nil {
+        return nil, err
+    }
+    return &u, nil
+}
+
+api/internal/db/history.go
+package db
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+type History struct {
+	ID        string
+	Action    string
+	Timestamp time.Time
+	Method    string
+}
+
+// Insere novo registro no histórico
+func InsertHistory(ctx context.Context, pool *sql.DB, action, method string) error {
+	_, err := pool.ExecContext(ctx,
+		`INSERT INTO lock_history (action, method) VALUES ($1, $2)`,
+		action, method,
+	)
+	return err
+}
+
+// Lista histórico (limit)
+func GetHistory(ctx context.Context, pool *sql.DB, limit int) ([]History, error) {
+	rows, err := pool.QueryContext(ctx,
+		`SELECT id, action, timestamp, method
+		 FROM lock_history
+		 ORDER BY timestamp DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hist []History
+	for rows.Next() {
+		var h History
+		if err := rows.Scan(&h.ID, &h.Action, &h.Timestamp, &h.Method); err != nil {
+			return nil, err
+		}
+		hist = append(hist, h)
+	}
+	return hist, rows.Err()
+}
+
+
+api/internal/config/config.go
+package config
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	HTTPAddr          string
+
+	MQTTBroker        string
+	MQTTClientID      string
+	MQTTUser          string
+	MQTTPass          string
+	MQTTTopicState    string
+	MQTTTopicCommands string
+
+	JWTSecret  string
+	JWTExpiry  time.Duration
+
+	DB         *sql.DB
+	MaxHistory int
+}
+
+func Load() *Config {
+	_ = godotenv.Load()
+
+	// Pega a string de conexão do .env
+	dsn := must("POSTGRES_ENDPOINT")
+
+	// Abre conexão com Postgres
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		log.Fatalf("Erro ao abrir conexão com Postgres: %v", err)
+	}
+
+	// Testa conexão
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Banco de dados inacessível: %v", err)
+	}
+
+	cfg := &Config{
+		HTTPAddr:          getenv("HTTP_ADDR", "0.0.0.0:8088"),
+		MQTTBroker:        must("MQTT_BROKER"),
+		MQTTClientID:      must("MQTT_CLIENT_ID"),
+		MQTTUser:          must("MQTT_USER"),
+		MQTTPass:          must("MQTT_PASS"),
+		MQTTTopicState:    must("MQTT_TOPIC_STATE"),
+		MQTTTopicCommands: getenv("MQTT_TOPIC_COMMANDS", "fechadura/comandos"),
+		JWTSecret:         getenv("JWT_SECRET", "dev-secret-change-me"),
+		JWTExpiry:         getDuration("JWT_EXP_MINUTES", 60),
+		MaxHistory:        getInt("MAX_HISTORY", 200),
+		DB:                db,
+	}
+
+	return cfg
+}
+
+func must(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("variável de ambiente obrigatória não definida: %s", key)
+	}
+	return v
+}
+
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func getInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		if n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
+func getDuration(key string, defMinutes int) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		if n > 0 {
+			return time.Duration(n) * time.Minute
+		}
+	}
+	return time.Duration(defMinutes) * time.Minute
+}
+
+
+api/internal/state/store.go
+package state
+
+import (
+	"encoding/json"
+	"sync"
+	"time"
+
+	"smartlock/internal/model"
+)
+
+type Store struct {
+	mu               sync.RWMutex
+	connected        bool
+	lastSeen         time.Time
+	lastTopic        string
+	lastQoS          byte
+	lastRetained     bool
+	lastPayloadRaw   string
+	lastPayload      map[string]interface{}
+	trancaEstaAberta *bool
+	history          []model.UltimaMensagem
+	maxHistory       int
+
+	updateCh chan struct{} // <<<< novo: fecha/recria para “broadcast”
+}
+
+func NewStore(maxHistory int) *Store {
+	return &Store{
+		lastPayload: make(map[string]interface{}),
+		maxHistory:  maxHistory,
+		updateCh:    make(chan struct{}), // aberto inicialmente
+	}
+}
+
+func (s *Store) UpdateFromMQTT(topic string, qos byte, retained bool, payload []byte) {
+	now := time.Now().UTC()
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(payload, &m); err != nil {
+		m = map[string]interface{}{"_non_json_payload": string(payload)}
+	}
+
+	var ta *bool
+	if v, ok := m["tranca_aberta"]; ok {
+		switch b := v.(type) {
+		case bool:
+			ta = &b
+		case float64:
+			val := b != 0
+			ta = &val
+		case string:
+			switch b {
+			case "true", "1":
+				val := true; ta = &val
+			case "false", "0":
+				val := false; ta = &val
+			}
+		}
+	}
+
+	um := model.UltimaMensagem{
+		Topic:      topic,
+		QoS:        qos,
+		Retained:   retained,
+		Timestamp:  now.Format(time.RFC3339),
+		PayloadRaw: string(payload),
+	}
+
+	s.mu.Lock()
+	s.connected = true
+	s.lastSeen = now
+	s.lastTopic = topic
+	s.lastQoS = qos
+	s.lastRetained = retained
+	s.lastPayloadRaw = string(payload)
+	s.lastPayload = m
+	s.trancaEstaAberta = ta
+
+	s.history = append(s.history, um)
+	if len(s.history) > s.maxHistory {
+		s.history = s.history[len(s.history)-s.maxHistory:]
+	}
+
+	// acorda todos os “waiters”
+	close(s.updateCh)
+	s.updateCh = make(chan struct{})
+	s.mu.Unlock()
+}
+
+func (s *Store) SetConnected(c bool) {
+	s.mu.Lock()
+	s.connected = c
+	// considera mudança de conectividade como “update”
+	close(s.updateCh)
+	s.updateCh = make(chan struct{})
+	s.mu.Unlock()
+}
+
+func (s *Store) Snapshot(historyLimit int) (connected bool, lastSeen time.Time, lastTopic string, lastQoS byte, lastRetained bool, lastPayloadRaw string, lastPayload map[string]interface{}, tranca *bool, hist []model.UltimaMensagem) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if historyLimit > len(s.history) {
+		historyLimit = len(s.history)
+	}
+	if historyLimit < 0 {
+		historyLimit = 0
+	}
+
+	var historyOut []model.UltimaMensagem
+	if historyLimit > 0 {
+		historyOut = append(historyOut, s.history[len(s.history)-historyLimit:]...)
+	}
+
+	payloadCopy := make(map[string]interface{}, len(s.lastPayload))
+	for k, v := range s.lastPayload {
+		payloadCopy[k] = v
+	}
+
+	return s.connected, s.lastSeen, s.lastTopic, s.lastQoS, s.lastRetained, s.lastPayloadRaw, payloadCopy, s.trancaEstaAberta, historyOut
+}
+
+// WaitForUpdate bloqueia até lastSeen > since ou timeout.
+func (s *Store) WaitForUpdate(since time.Time, timeout time.Duration) bool {
+	// fast-path: já mudou
+	s.mu.RLock()
+	if s.lastSeen.After(since) {
+		s.mu.RUnlock()
+		return true
+	}
+	ch := s.updateCh
+	s.mu.RUnlock()
+
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+
+	select {
+	case <-ch:
+		return true // houve update (ou conectividade mudou)
+	case <-t.C:
+		return false // timeout
+	}
+}
+
+
+api/internal/model/model.go
+package model
+
+type UltimaMensagem struct {
+	Topic      string `json:"topic"`
+	QoS        byte   `json:"qos"`
+	Retained   bool   `json:"retained"`
+	Timestamp  string `json:"timestamp"`
+	PayloadRaw string `json:"payload_raw"`
+}
+
+type SimpleStatus struct {
+	IsLocked    bool   `json:"isLocked"`
+	IsConnected bool   `json:"isConnected"`
+	LastUpdate  string `json:"lastUpdate"`
+}
+
+type HistoryItem struct {
+	ID        string `json:"id"`
+	Action    string `json:"action"`   // "locked" | "unlocked"
+	Timestamp string `json:"timestamp"`
+	Method    string `json:"method"`   // "app" | "keypad" | "auto"
+}
+
+type HistoryResponse struct {
+	History []HistoryItem `json:"history"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Success bool   `json:"success"`
+	Token   string `json:"token,omitempty"`
+	Message string `json:"message,omitempty"`
+	User    *struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	} `json:"user,omitempty"`
+}
+
+
+api/internal/auth/jwt.go
+package auth
+
+import (
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type Service struct {
+	secret []byte
+	exp    time.Duration
+}
+
+func New(secret string, exp time.Duration) *Service {
+	return &Service{secret: []byte(secret), exp: exp}
+}
+
+func (s *Service) Generate(userID, email string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":   userID,
+		"email": email,
+		"exp":   time.Now().Add(s.exp).Unix(),
+		"iat":   time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+func (s *Service) Validate(tokenStr string) (jwt.MapClaims, error) {
+	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("método de assinatura inválido")
+		}
+		return s.secret, nil
+	})
+	if err != nil || !tok.Valid {
+		return nil, errors.New("token inválido")
+	}
+	if claims, ok := tok.Claims.(jwt.MapClaims); ok {
+		return claims, nil
+	}
+	return nil, errors.New("claims inválidas")
+}
+
+
+api/internal/httpserver/middleware.go
+package httpserver
+
+import (
+	"net/http"
+	"strings"
+
+	"smartlock/internal/auth"
+)
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func authMiddleware(authSvc *auth.Service, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Get("Authorization")
+		if !strings.HasPrefix(h, "Bearer ") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		token := strings.TrimPrefix(h, "Bearer ")
+		if _, err := authSvc.Validate(token); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+api/internal/httpserver/server.go
+package httpserver
+
+import (
+	"log"
+	"net/http"
+
+	"smartlock/internal/auth"
+	"smartlock/internal/config"
+	"smartlock/internal/mqtt"
+	"smartlock/internal/state"
+)
+
+type Server struct {
+	cfg  *config.Config
+	http *http.ServeMux
+}
+
+func NewServer(cfg *config.Config, st *state.Store, mq *mqtt.Client, as *auth.Service) *Server {
+	h := NewHandlers(cfg, st, mq, as)
+
+	mux := http.NewServeMux()
+
+	// pública
+	mux.Handle("/login", withCORS(http.HandlerFunc(h.Login)))
+
+	// protegidas
+	mux.Handle("/status", withCORS(authMiddleware(as, http.HandlerFunc(h.StatusSimple))))
+	mux.Handle("/history", withCORS(authMiddleware(as, http.HandlerFunc(h.History))))
+	mux.Handle("/toggle", withCORS(authMiddleware(as, http.HandlerFunc(h.Toggle))))
+
+	return &Server{cfg: cfg, http: mux}
+}
+
+func (s *Server) Start() {
+	log.Printf("HTTP escutando em http://%s", s.cfg.HTTPAddr)
+	if err := http.ListenAndServe(s.cfg.HTTPAddr, s.http); err != nil {
+		log.Fatalf("HTTP erro: %v", err)
+	}
+}
+
+
+api/internal/httpserver/handlers.go
+package httpserver
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"time"
+	"golang.org/x/crypto/bcrypt"
+
+	"smartlock/internal/auth"
+	"smartlock/internal/config"
+	"smartlock/internal/model"
+	"smartlock/internal/mqtt"
+	"smartlock/internal/state"
+	"smartlock/internal/db"
+)
+
+type Handlers struct {
+	cfg     *config.Config
+	store   *state.Store
+	mqtt    *mqtt.Client
+	authSvc *auth.Service
+}
+
+func NewHandlers(cfg *config.Config, st *state.Store, mq *mqtt.Client, as *auth.Service) *Handlers {
+	return &Handlers{cfg: cfg, store: st, mqtt: mq, authSvc: as}
+}
+
+// rota login (pública) 
+func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "use POST", http.StatusMethodNotAllowed)
+        return
+    }
+    var req model.LoginRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "payload inválido", http.StatusBadRequest)
+        return
+    }
+
+    // busca no banco
+    user, err := db.GetUserByEmail(r.Context(), h.cfg.DB, req.Email)
+    if err != nil {
+        http.Error(w, "email ou senha errados", http.StatusUnauthorized)
+        return
+    }
+
+    // compara senha hash (bcrypt)
+    if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
+        http.Error(w, "email ou senha errados", http.StatusUnauthorized)
+        return
+    }
+
+    // gera token JWT
+    tok, _ := h.authSvc.Generate(user.ID, user.Email)
+
+    resp := model.LoginResponse{
+        Success: true,
+        Token:   tok,
+        User: &struct {
+            ID    string `json:"id"`
+            Email string `json:"email"`
+			Name  string `json:"name"`
+        }{ID: user.ID, Email: user.Email, Name: user.Name},
+    }
+    writeJSON(w, resp)
+}
+
+
+
+// Status simples (protegido, com long-poll)
+func (h *Handlers) StatusSimple(w http.ResponseWriter, r *http.Request) {
+	// Long-poll params
+	q := r.URL.Query()
+	var since time.Time
+	if s := q.Get("since"); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			since = t
+		}
+	}
+	timeout := 25 * time.Second
+	if v := q.Get("timeout"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 && d <= 60*time.Second {
+			timeout = d
+		}
+	}
+
+	// Espera mudança (ou segue direto se já mudou)
+	if !h.store.WaitForUpdate(since, timeout) && !since.IsZero() {
+		// timeout sem mudanças → 204
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	connected, lastSeen, _, _, _, _, _, tranca, _ := h.store.Snapshot(0)
+
+	isLocked := true
+	if tranca != nil {
+		isLocked = !*tranca // tranca_aberta=true => isLocked=false
+	}
+	last := ""
+	if !lastSeen.IsZero() {
+		last = lastSeen.Format(time.RFC3339)
+	}
+
+	writeJSON(w, model.SimpleStatus{
+		IsLocked:    isLocked,
+		IsConnected: connected,
+		LastUpdate:  last, // o cliente usa este valor no próximo “since”
+	})
+}
+
+// Histórico (protegido)
+func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n >= 0 && n <= h.cfg.MaxHistory {
+			limit = n
+		}
+	}
+
+	ctx := r.Context()
+	hist, err := db.GetHistory(ctx, h.cfg.DB, limit)
+	if err != nil {
+		http.Error(w, "Erro ao consultar histórico", http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]model.HistoryItem, 0, len(hist))
+	for _, rec := range hist {
+		out = append(out, model.HistoryItem{
+			ID:        rec.ID,
+			Action:    rec.Action,
+			Timestamp: rec.Timestamp.Format(time.RFC3339),
+			Method:    rec.Method,
+		})
+	}
+
+	writeJSON(w, model.HistoryResponse{History: out})
+}
+// Toggle (protegido)
+func (h *Handlers) Toggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	// publica o comando no MQTT
+	if err := h.mqtt.PublishToggle(); err != nil {
+		writeJSON(w, map[string]any{
+			"success": false,
+			"message": "erro ao publicar comando",
+		})
+		return
+	}
+
+	// Prediz o novo estado a partir do último snapshot
+	_, _, _, _, _, _, _, tranca, _ := h.store.Snapshot(0)
+	// tranca_aberta=true => isLocked=false
+	curOpen := false
+	if tranca != nil {
+		curOpen = *tranca
+	}
+	newOpen := !curOpen
+	newIsLocked := !newOpen
+
+	writeJSON(w, map[string]any{
+		"success":  true,
+		"isLocked": newIsLocked,
+	})
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+
+api/internal/mqtt/client.go
+package mqtt
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"time"
+
+	paho "github.com/eclipse/paho.mqtt.golang"
+
+	"smartlock/internal/config"
+	"smartlock/internal/db"
+	"smartlock/internal/state"
+)
+
+type Client struct {
+	cfg   *config.Config
+	store *state.Store
+
+	client  paho.Client
+	Initial chan struct{}
+}
+
+func New(cfg *config.Config, st *state.Store) *Client {
+	return &Client{cfg: cfg, store: st, Initial: make(chan struct{}, 1)}
+}
+
+func (c *Client) Start() {
+	host, _ := os.Hostname()
+	clientID := c.cfg.MQTTClientID + "-" + host + "-" + strconv.Itoa(os.Getpid())
+
+	opts := paho.NewClientOptions().
+		AddBroker(c.cfg.MQTTBroker).
+		SetClientID(clientID).
+		SetUsername(c.cfg.MQTTUser).
+		SetPassword(c.cfg.MQTTPass).
+		SetCleanSession(true).
+		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetConnectRetryInterval(5 * time.Second).
+		SetKeepAlive(60 * time.Second).
+		SetPingTimeout(20 * time.Second).
+		SetConnectTimeout(15 * time.Second).
+		SetWriteTimeout(15 * time.Second).
+		SetMaxReconnectInterval(30 * time.Second).
+		SetOrderMatters(false)
+
+	opts.SetOnConnectHandler(func(cl paho.Client) {
+		log.Println("Conectado ao broker MQTT")
+		if tok := cl.Subscribe(c.cfg.MQTTTopicState, 1, c.onMessage); tok.Wait() && tok.Error() != nil {
+			log.Printf("Erro ao assinar tópico %s: %v", c.cfg.MQTTTopicState, tok.Error())
+			return
+		}
+		log.Printf("Assinado em %q", c.cfg.MQTTTopicState)
+		c.store.SetConnected(true)
+	})
+
+	opts.SetConnectionLostHandler(func(cl paho.Client, err error) {
+		log.Printf("Conexão MQTT perdida: %v", err)
+		c.store.SetConnected(false)
+	})
+
+	c.client = paho.NewClient(opts)
+	if tok := c.client.Connect(); tok.Wait() && tok.Error() != nil {
+		log.Fatalf("Erro conectando ao broker: %v", tok.Error())
+	}
+
+	// Aguarda retained inicial por até 5s
+	log.Println("Aguardando estado inicial (retained) por até 5s...")
+	select {
+	case <-c.Initial:
+		log.Println("Estado inicial recebido.")
+	case <-time.After(5 * time.Second):
+		log.Println("Sem retained inicial; seguindo em frente.")
+	}
+}
+
+func (c *Client) onMessage(_ paho.Client, msg paho.Message) {
+	log.Printf(">> MQTT mensagem | tópico=%s qos=%d retained=%v | payload=%s\n",
+		msg.Topic(), msg.Qos(), msg.Retained(), string(msg.Payload()))
+
+	// Atualiza estado interno
+	c.store.UpdateFromMQTT(msg.Topic(), msg.Qos(), msg.Retained(), msg.Payload())
+
+	// Se for o tópico de estado, registra no histórico
+	if msg.Topic() == c.cfg.MQTTTopicState {
+		var payload map[string]any
+		if err := json.Unmarshal(msg.Payload(), &payload); err == nil {
+			action := "locked"
+			method := "auto"
+
+			if v, ok := payload["tranca_aberta"].(bool); ok && v {
+				action = "unlocked"
+			}
+			if v, ok := payload["method"].(string); ok && v != "" {
+				method = v
+			}
+
+			// Insere no histórico
+			if err := db.InsertHistory(context.Background(), c.cfg.DB, action, method); err != nil {
+				fmt.Printf("erro ao salvar histórico MQTT: %v\n", err)
+			}
+		}
+	}
+
+	// Marca retained inicial
+	select {
+	case c.Initial <- struct{}{}:
+	default:
+	}
+}
+
+func (c *Client) PublishToggle() error {
+	payload := `{"command":"toggle"}`
+	tok := c.client.Publish(c.cfg.MQTTTopicCommands, 1, false, payload)
+	tok.Wait()
+	return tok.Error()
+}
+
+
